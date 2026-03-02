@@ -273,6 +273,57 @@ export default function RescueTeam() {
 
     addHistory("COMPLETED", req);
   };
+
+  const confirmPickup = async (id) => {
+    const req = requests.find((r) => r.id === id);
+    if (!req) return;
+
+    // lấy missionId + reliefOrderId từ raw (khi nối API thật)
+    const raw = req.__raw || {};
+    const rescueMissionId =
+      raw.rescueMissionID ?? raw.rescueMissionId ?? raw.missionId ?? raw.id;
+    const reliefOrderId =
+      raw.reliefOrderID ?? raw.reliefOrderId ?? raw.orderId;
+
+    if (!rescueMissionId || !reliefOrderId) {
+      alert("Thiếu RescueMissionId hoặc ReliefOrderId để confirm pickup.");
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setErr("");
+
+      await rescueMissionService.confirmPickup({
+        rescueMissionId,
+        reliefOrderId,
+      });
+
+      // update UI local
+      setRequests((prev) =>
+        prev.map((r) =>
+          r.id === id
+            ? {
+              ...r,
+              __raw: {
+                ...r.__raw,
+                reliefOrderStatus: "PickedUp",
+              },
+              description: `${raw.city ?? ""} • ${raw.currentStatus ?? ""} • PICKED_UP`,
+            }
+            : r
+        )
+      );
+
+      addHistory("CONFIRM_PICKUP", req);
+    } catch (e) {
+      console.error(e);
+      setErr("Confirm pickup failed.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   /* ===== FILTERED REQUESTS ===== */
   const filteredRequests = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -404,7 +455,27 @@ export default function RescueTeam() {
                   >
                     Report Problem
                   </button>
+                  {(() => {
+                    const raw = r.__raw || {};
+                    const orderStatus = String(raw.reliefOrderStatus || raw.orderStatus || "").toLowerCase();
+                    const hasOrderId = !!(raw.reliefOrderID ?? raw.reliefOrderId ?? raw.orderId);
 
+                    const canConfirm = hasOrderId && (orderStatus === "prepared" || orderStatus === "pending_pickup");
+
+                    if (!hasOrderId) return null;
+
+                    return (
+                      <button
+                        className="btn btn-accept"
+                        onClick={() => confirmPickup(r.id)}
+                        disabled={loading || !canConfirm}
+                        style={{ gridColumn: "1 / -1" }}
+                        title={!canConfirm ? "Order chưa ở trạng thái Prepared" : ""}
+                      >
+                        Confirm Pickup
+                      </button>
+                    );
+                  })()}
                   <button
                     className="btn btn-accept"
                     onClick={() => completeRequest(r.id)}
