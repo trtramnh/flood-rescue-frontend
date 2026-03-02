@@ -72,6 +72,59 @@ export default function ManagerDashboard() {
     loadItems();
   }, []);
 
+<<<<<<< HEAD
+=======
+  //==Prepare order ==
+  const [orders, setOrders] = useState([]);
+  const [showPrepareModal, setShowPrepareModal] = useState(false);
+  const [selectedOrder, setSelectedOrder] = useState(null);
+  const [prepareItems, setPrepareItems] = useState([]); // [{reliefItemID, quantity}]
+  // Map reliefItemID -> reliefItemName
+  const itemNameById = useMemo(() => {
+    const map = new Map();
+    (products || []).forEach((p) => {
+      const id = p.reliefItemID ?? p.ReliefItemID;
+      const name = p.reliefItemName ?? p.ReliefItemName;
+      if (id && name) map.set(id, name);
+    });
+    return map;
+  }, [products]);
+  const loadOrders = async () => {
+    try {
+      const res = await reliefOrdersService.getAll(); // hoặc getPending()
+
+      console.log("Orders API response:", res);      // log toàn bộ response
+      console.log("Orders data:", res?.data);        // log riêng data
+
+      if (res?.success) {
+        const normalized = (res.data || []).map((o) => ({
+          reliefOrderID: o.reliefOrderID ?? o.ReliefOrderID ?? o.id,
+          status: o.status ?? o.Status,
+          missionStatus: o.missionStatus ?? o.MissionStatus,
+          warehouseName: o.warehouseName ?? o.WarehouseName ?? "",
+          items: (o.items ?? o.Items ?? []).map((x) => ({
+            reliefItemID: x.reliefItemID ?? x.ReliefItemID,
+            quantity: x.quantity ?? x.Quantity ?? 0,
+          })),
+        }));
+
+        setOrders(normalized);
+      } else {
+        setOrders([]);
+      }
+    } catch (err) {
+      console.error("Load orders failed:", err);
+      setOrders([]);
+    }
+  };
+  useEffect(() => {
+    //BE Chưa có Get/api/ReliefOrders 
+    //loadOrders();
+  }, []);
+
+
+
+>>>>>>> 47379bb (feat(manager): integrate relief item/order updates)
 
   // ====== PRODUCT USAGE HISTORY (mock) ======
   const productUsageHistory = [
@@ -316,7 +369,7 @@ export default function ManagerDashboard() {
             <div className="panel-card">
               <div className="panel-card-title">Rescue Requests Trend</div>
               <div className="chart-box">
-                <ResponsiveContainer width="100%" height="100%">
+                <ResponsiveContainer width="100%" height={240}>
                   <LineChart data={monthlyRescues}>
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="month" />
@@ -334,7 +387,7 @@ export default function ManagerDashboard() {
             <div className="panel-card">
               <div className="panel-card-title">Emergency Types Distribution</div>
               <div className="chart-box">
-                <ResponsiveContainer width="100%" height="100%">
+                <ResponsiveContainer width="100%" height={240}>
                   <RePieChart>
                     <Pie
                       data={emergencyTypes}
@@ -359,7 +412,7 @@ export default function ManagerDashboard() {
             <div className="panel-card">
               <div className="panel-card-title">Response Time Analysis</div>
               <div className="chart-box">
-                <ResponsiveContainer width="100%" height="100%">
+                <ResponsiveContainer width="100%" height={240}>
                   <BarChart data={responseTimeData}>
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="time" />
