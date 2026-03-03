@@ -376,19 +376,27 @@ const RequestRescue = () => {
 
       // Gọi API
       const api = await createRescueRequest(payload);
-
+      console.log("API RESPONSE:", api);
       // ApiResponse -> shortCode nằm trong api.data
-      const shortCode = api?.content?.shortCode ?? api?.content?.ShortCode;
+      const shortCode =
+        api?.content?.shortCode ??
+        api?.content?.ShortCode ??
+        api?.data?.shortCode ??      // fallback nếu BE/FE từng dùng data
+        api?.data?.ShortCode ??
+        api?.shortCode ??
+        api?.ShortCode;
+      console.log("SHORT CODE:", shortCode);
+
       if (!shortCode) throw new Error("Server did not return shortCode");
 
       // Lưu shortCode để trang status dùng
       localStorage.setItem("lastShortCode", shortCode);
 
       setShowSuccess(true);
+      navigate(`/citizen/request-status?code=${encodeURIComponent(shortCode)}`);
+      return;
       // chuyển trang (nếu bạn muốn truyền code thì dùng query)
-      setTimeout(() => {
-        navigate(`/citizen/request-status?code=${shortCode}`);
-      }, 800);
+      
     } catch (error) {
       console.error(error);
       alert(error?.message || "Failed to submit rescue request. Please try again!");

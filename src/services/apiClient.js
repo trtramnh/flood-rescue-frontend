@@ -26,6 +26,8 @@ export const API_BASE_URL = "https://apifloodrescue.huydevops.id.vn/api"; //đ�
 export async function fetchWithAuth(url, options = {}) {
     // Lấy access token từ localStorage
     const raw = localStorage.getItem("auth");
+    const token = localStorage.getItem("token");
+
     const auth = raw ? JSON.parse(raw) : null;
     //backend có thể trả về AccessToken hoặc accessToken, nên phải check cả 2
     const accessToken = auth?.accessToken ?? auth?.AccessToken ?? null;
@@ -37,10 +39,10 @@ export async function fetchWithAuth(url, options = {}) {
     let res = await fetch(fullUrl, {
         ...options,
         headers: {
-            "Content-Type": "application/json",
             ...(options.headers || {}),
-            ...(accessToken
-                ? { Authorization: `Bearer ${accessToken}` } : {}),
+            ...(options.body ? { "Content-Type": "application/json" } : {}),
+            ...(token
+                ? { Authorization: `Bearer ${token}` } : {}),
         },
     });
     //nếu không phải lỗi 401, trả về response gốc
@@ -49,13 +51,13 @@ export async function fetchWithAuth(url, options = {}) {
     const refreshRes = await fetch(`${API_BASE_URL}/Auth/refresh-token`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-            accessToken,//match với refreshTokenRequestDto bên backend
-        }),
+        body: JSON.stringify({ accessToken: token }),
     });
 
     //nếu refresh thất bại -> logout
     if (!refreshRes.ok) {
+        localStorage.removeItem("token");
+        localStorage.removeItem("role");
         localStorage.removeItem("auth");
         window.location.href = "/login";
         return res; //trả về response 401 ban đầu để component có thể hiển thị thông báo nếu cần
@@ -63,14 +65,16 @@ export async function fetchWithAuth(url, options = {}) {
 
     //refresh thành công 
     const refreshJson = await refreshRes.json();
+    const newToken = refreshJson?.data?.accessToken ?? refreshJson?.data?.AccessToken;
     //lưu token mới vào localStorage
     localStorage.setItem("auth", JSON.stringify(refreshJson.data));
-
+    localStorage.setItem("token", newToken);
 
     const newAccessToken =
         refreshJson.data.accessToken ??
         refreshJson.data.AccessToken;
     //gửi lại request ban đầu với token mới
+
     return fetch(fullUrl, {
         ...options,
         headers: {

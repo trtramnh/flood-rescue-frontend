@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import React, { useState, useEffect, useMemo } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
 import Header from "../../../components/common/Header";
+import { trackRescueRequest } from "../../../services/rescueRequestService";
 import "./RequestStatus.css";
 
 const RequestStatus = () => {
@@ -12,6 +13,18 @@ const RequestStatus = () => {
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
 
+
+  const location = useLocation();
+
+  const shortCode = useMemo(() => {
+    const qs = new URLSearchParams(location.search);
+    return (
+      qs.get("code") ||
+      qs.get("shortCode") ||
+      localStorage.getItem("lastShortCode") ||
+      ""
+    ).trim();
+  }, [location.search]);
   // Status flow simulation
   const statusFlow = [
     { status: "received", label: "Request Received", time: "2 min ago", icon: "📥" },
@@ -51,23 +64,38 @@ const RequestStatus = () => {
   ];
 
   useEffect(() => {
-    // Load request data from localStorage
-    const savedRequest = localStorage.getItem('lastRescueRequest');
-    if (savedRequest) {
-      const parsedRequest = JSON.parse(savedRequest);
-      setRequest(parsedRequest);
-      
-      // Set a random rescue team
-      const randomTeam = rescueTeams[Math.floor(Math.random() * rescueTeams.length)];
-      setRescueTeam(randomTeam);
-      
-      // Simulate ETA countdown
-      startCountdown();
-    } else {
-      // No request found, redirect to request page
-      setTimeout(() => navigate("/citizen/request"), 1000);
+    if (!shortCode) {
+      console.warn("Missing shortCode");
+      return;
     }
-  }, [navigate]);
+
+    (async () => {
+      try {
+        const res = await trackRescueRequest(shortCode);
+        const dto = res?.data ?? res;
+
+        setRequest({
+          requestId: dto?.rescueRequestID || dto?.rescueRequestId || dto?.id || shortCode,
+          timestamp: dto?.createdTime || dto?.createdAt || new Date().toISOString(),
+          emergencyType: dto?.requestType || "Rescue",
+          description: dto?.description || "",
+          priorityLevel: dto?.priority || "Medium",
+          peopleCount: dto?.peopleCount ?? 1,
+          fullName: dto?.fullName || "",
+          phoneNumber: dto?.citizenPhone || dto?.phoneNumber || "",
+          address: dto?.address || "",
+          shareLocation: true,
+        });
+
+        const randomTeam = rescueTeams[Math.floor(Math.random() * rescueTeams.length)];
+        setRescueTeam(randomTeam);
+
+        startCountdown();
+      } catch (e) {
+        console.error("trackRescueRequest failed:", e);
+      }
+    })();
+  }, [shortCode]);
 
   const startCountdown = () => {
     const timer = setInterval(() => {
@@ -85,7 +113,7 @@ const RequestStatus = () => {
 
   const handleCancelRequest = () => {
     setIsCancelling(true);
-    
+
     // Simulate API call
     setTimeout(() => {
       localStorage.removeItem('lastRescueRequest');
@@ -172,7 +200,7 @@ const RequestStatus = () => {
               })}
             </p>
           </div>
-          <button 
+          <button
             className="cancel-btn"
             onClick={() => setShowCancelModal(true)}
             disabled={currentStatusIndex > 2}
@@ -193,7 +221,7 @@ const RequestStatus = () => {
                 </p>
               </div>
             </div>
-            <div className="priority-badge" style={{ 
+            <div className="priority-badge" style={{
               backgroundColor: getPriorityColor(request.priorityLevel) + '20',
               color: getPriorityColor(request.priorityLevel),
               borderColor: getPriorityColor(request.priorityLevel)
@@ -226,14 +254,14 @@ const RequestStatus = () => {
           <h2 className="section-title">Request Status</h2>
           <div className="timeline">
             {statusFlow.map((step, index) => (
-              <div 
-                key={step.status} 
+              <div
+                key={step.status}
                 className={`timeline-step ${index <= currentStatusIndex ? 'completed' : ''} ${index === currentStatusIndex ? 'current' : ''}`}
               >
                 <div className="timeline-marker">
-                  <div 
-                    className="marker-circle" 
-                    style={{ 
+                  <div
+                    className="marker-circle"
+                    style={{
                       backgroundColor: index <= currentStatusIndex ? getStatusColor(step.status) : '#e2e8f0',
                       borderColor: getStatusColor(step.status)
                     }}
@@ -241,9 +269,9 @@ const RequestStatus = () => {
                     {getStatusIcon(step.status)}
                   </div>
                   {index < statusFlow.length - 1 && (
-                    <div 
-                      className="timeline-line" 
-                      style={{ 
+                    <div
+                      className="timeline-line"
+                      style={{
                         backgroundColor: index < currentStatusIndex ? getStatusColor(step.status) : '#e2e8f0'
                       }}
                     ></div>
@@ -273,7 +301,7 @@ const RequestStatus = () => {
                 📞 Contact Team
               </button>
             </div>
-            
+
             <div className="team-info">
               <div className="team-overview">
                 <div className="team-name">
@@ -339,7 +367,7 @@ const RequestStatus = () => {
               <span className="detail-value">{request.contactVia}</span>
             </div>
           </div>
-          
+
           <div className="action-buttons">
             <button className="action-btn secondary" onClick={handleUpdateLocation}>
               📍 Update Location
@@ -389,23 +417,23 @@ const RequestStatus = () => {
             <div className="modal-body">
               <div className="warning-icon">⚠️</div>
               <p>
-                Are you sure you want to cancel this emergency request? 
+                Are you sure you want to cancel this emergency request?
                 This action cannot be undone.
               </p>
               <p className="warning-text">
-                <strong>Important:</strong> Only cancel if the emergency situation has been resolved 
+                <strong>Important:</strong> Only cancel if the emergency situation has been resolved
                 or if this was requested in error.
               </p>
             </div>
             <div className="modal-actions">
-              <button 
+              <button
                 className="modal-btn secondary"
                 onClick={() => setShowCancelModal(false)}
                 disabled={isCancelling}
               >
                 Keep Request
               </button>
-              <button 
+              <button
                 className="modal-btn danger"
                 onClick={handleCancelRequest}
                 disabled={isCancelling}
