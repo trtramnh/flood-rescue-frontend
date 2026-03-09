@@ -48,6 +48,14 @@ const AdminDashboard = () => {
           >
             📋 List Rescue Team
           </button>
+          <h3>📊 Report</h3>
+          <button
+            onClick={() => navigate("/admin/report")}
+            className={location.pathname === "/admin/report" ? "active" : ""}
+          >
+            📈 Admin Report
+          </button>
+
           <h3>⚙️ Setting</h3>
           <button className="logout" onClick={handleLogout}>
             🚪 Logout
