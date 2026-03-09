@@ -15,8 +15,9 @@ import ProtectedRoute from "./routes/ProtectedRoute";
 import AdminDashboard from "./pages/admin/AdminDashboard";
 import ListUser from "./pages/admin/ListUser.jsx";
 import CreateUser from "./pages/admin/CreateUser.jsx";
-import CreateRescueTeam from "./pages/admin/CreateRescueTeam"; // đường dẫn đúng theo bạn đặt file
+import CreateRescueTeam from "./pages/admin/CreateRescueTeam";
 import ListRescueTeams from "./pages/admin/ListRescueTeams.jsx";
+import AdminReport from "./pages/admin/AdminReport.jsx";
 
 // ===== MANAGER =====
 import ManagerDashboard from "./pages/manager/ManagerDashboard";
@@ -64,7 +65,7 @@ function App() {
           <Route path="create-rescue-team" element={<CreateRescueTeam />} />
           <Route path="list-user" element={<ListUser />} />
           <Route path="list-rescue-team" element={<ListRescueTeams />} />
-
+          <Route path="report" element={<AdminReport />} />
         </Route>
 
         {/* ===== MANAGER (PROTECTED) ===== */}
