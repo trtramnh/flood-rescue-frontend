@@ -344,6 +344,11 @@ const RequestStatus = () => {
               <span className="detail-label">Phone Number</span>
               <span className="detail-value">{request.phoneNumber}</span>
             </div>
+
+            <div className="detail-item">
+              <span className="detail-label">Email</span>
+              <span className="detail-value">{request.email}</span>
+            </div>
             <div className="detail-item">
               <span className="detail-label">Location</span>
               <span className="detail-value">{request.address}</span>

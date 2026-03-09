@@ -76,6 +76,7 @@ const RequestRescue = () => {
     priorityLevel: "Medium",
     description: "",
     contactVia: "Phone Call",
+    agreeTerms: false,
   });
 
   // IMAGE upload (Cloudinary)
@@ -293,25 +294,14 @@ const RequestRescue = () => {
     },
   ];
 
-  const priorityLevels = [
-    {
-      value: "Critical",
-      color: "#ef4444",
-      label: "Life-threatening situation",
-    },
-    { value: "High", color: "#f97316", label: "Urgent assistance needed" },
-    { value: "Medium", color: "#eab308", label: "Serious situation" },
-    { value: "Low", color: "#22c55e", label: "Non-critical emergency" },
-  ];
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  const handleSubmit = async () => {
     setIsLoading(true);
 
     // Validation
     const requiredFields = [
       "fullName",
       "phoneNumber",
+      "email",
       "address",
       "emergencyType",
     ];
@@ -335,7 +325,7 @@ const RequestRescue = () => {
       'input[name="agreeTerms"]',
     )?.checked;
 
-    if (!agreeChecked) {
+    if (!formData.agreeTerms) {
       alert("Please confirm the emergency agreement before submitting.");
       setIsLoading(false);
       return;
@@ -475,7 +465,7 @@ const RequestRescue = () => {
           </p>
         </div>
 
-        <form onSubmit={handleSubmit} className="request-form">
+        <form className="request-form">
           {/* Step 1: Basic Information */}
           {currentStep === 1 && (
             <div className="form-step">
@@ -919,6 +909,12 @@ const RequestRescue = () => {
                     type="checkbox"
                     name="agreeTerms"
                     className="checkbox-input"
+                    onChange={(e) =>
+                      setFormData((prev) => ({
+                        ...prev,
+                        agreeTerms: e.target.checked,
+                      }))
+                    }
                   />
                   <span className="checkbox-custom"></span>
                   <span className="checkbox-text">
@@ -956,9 +952,10 @@ const RequestRescue = () => {
                 </button>
               ) : (
                 <button
-                  type="submit"
+                  type="button"
                   className="submit-btn1"
                   disabled={isLoading || uploadingImage}
+                  onClick={handleSubmit}
                 >
                   {isLoading || uploadingImage ? (
                     <>
