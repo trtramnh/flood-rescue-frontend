@@ -4,7 +4,6 @@ import Header from "../../components/common/Header";
 import "./login.css";
 import { login } from "../../services/authService";
 
-
 const Dashboard = () => {
   const navigate = useNavigate();
 
@@ -35,7 +34,12 @@ const Dashboard = () => {
 
       // vì backend bọc trong content
       const content = auth?.content ?? auth?.data?.content ?? auth;
-      const roleRaw = content?.role ?? content?.Role ?? content?.roleName ?? content?.RoleName ?? "";
+      const roleRaw =
+        content?.role ??
+        content?.Role ??
+        content?.roleName ??
+        content?.RoleName ??
+        "";
       const token = content?.accessToken ?? content?.AccessToken ?? "";
 
       if (!roleRaw) {
@@ -50,16 +54,16 @@ const Dashboard = () => {
       // ✅ Map role theo DB (RoleName/RoleID)
       const roleMap = {
         // RoleName trong DB
-        "admin": "Administrator",
+        admin: "Administrator",
         "inventory manager": "Manager",
         "rescue coordinator": "Coordinator",
         "rescue team member": "RescueTeam",
 
         // nếu backend trả RoleID
-        "ad": "Administrator",
-        "im": "Manager",
-        "rc": "Coordinator",
-        "rt": "RescueTeam",
+        ad: "Administrator",
+        im: "Manager",
+        rc: "Coordinator",
+        rt: "RescueTeam",
       };
 
       const role = roleMap[roleKey];
@@ -73,7 +77,7 @@ const Dashboard = () => {
 
       // lưu token/role để ProtectedRoute dùng
       if (token) localStorage.setItem("token", token);
-      localStorage.setItem("role", role);      // lưu role đã map (FE role)
+      localStorage.setItem("role", role); // lưu role đã map (FE role)
       localStorage.setItem("isAuth", "true");
 
       showToast("Đăng nhập thành công", "success");
@@ -95,7 +99,6 @@ const Dashboard = () => {
         default:
           navigate("/unauthorized", { replace: true });
       }
-
     } catch (err) {
       showToast(err?.message || "Đăng nhập thất bại", "error");
     }
@@ -110,6 +113,7 @@ const Dashboard = () => {
       </button>
 
       <div className="login-container">
+        {/* Left: Login Form */}
         <div className="a2">
           <h2>Login Account</h2>
 
@@ -129,22 +133,37 @@ const Dashboard = () => {
               placeholder="Enter password"
             />
 
-            <button type="button" onClick={handleLogin}>Login</button>
+            <button type="button" onClick={handleLogin}>
+              Login
+            </button>
 
-            {/* Emergency hotline */}
             <div className="emergency-hotline">
               <span>🚨</span>
               <span>Emergency Hotline: 115</span>
             </div>
           </div>
         </div>
+
+        {/* Right: System Intro */}
+        <div className="login-info">
+          <h1>Flood Rescue System</h1>
+
+          <p>
+            A smart platform designed to coordinate rescue operations and manage
+            emergency requests during flood disasters.
+          </p>
+
+          <div className="feature">⚡ Fast emergency coordination</div>
+
+          <div className="feature">📍 Real-time rescue tracking</div>
+
+          <div className="feature">🤝 Efficient rescue team management</div>
+        </div>
       </div>
 
       {toast.show && (
         <div className={`login-toast ${toast.type}`}>{toast.message}</div>
       )}
-
-
     </div>
   );
 };
