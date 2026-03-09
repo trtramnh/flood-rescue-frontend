@@ -116,7 +116,7 @@ const Introduce = () => {
           <div className="footer-section">
             <h3>Contact</h3>
             <p>Email: rescue@gmail.com</p>
-            <p>Hotline: 0901 234 567</p>
+            <p>Hotline: 0965 782 358</p>
           </div>
           <div className="footer-section">
             <h3>Support</h3>

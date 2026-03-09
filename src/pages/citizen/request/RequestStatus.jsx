@@ -1,18 +1,20 @@
-import React, { useState, useEffect, useMemo } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import Header from "../../../components/common/Header";
 import { trackRescueRequest } from "../../../services/rescueRequestService";
 import "./RequestStatus.css";
+import { useLocation } from "react-router-dom";
 
 const RequestStatus = () => {
-  const navigate = useNavigate();
   const [request, setRequest] = useState(null);
   const [rescueTeam, setRescueTeam] = useState(null);
   const [eta, setEta] = useState("8-10");
   const [distance, setDistance] = useState("3.2");
-  const [showCancelModal, setShowCancelModal] = useState(false);
-  const [isCancelling, setIsCancelling] = useState(false);
 
+  const [inputCode, setInputCode] = useState("");
+  const [lookupError, setLookupError] = useState("");
+  const [isSearching, setIsSearching] = useState(false);
+
+  const countdownRef = useRef(null);
 
   const location = useLocation();
 
@@ -27,12 +29,22 @@ const RequestStatus = () => {
   }, [location.search]);
   // Status flow simulation
   const statusFlow = [
-    { status: "received", label: "Request Received", time: "2 min ago", icon: "📥" },
-    { status: "processing", label: "Processing", time: "1 min ago", icon: "⚙️" },
+    {
+      status: "received",
+      label: "Request Received",
+      time: "2 min ago",
+      icon: "📥",
+    },
+    {
+      status: "processing",
+      label: "Processing",
+      time: "1 min ago",
+      icon: "⚙️",
+    },
     { status: "assigned", label: "Team Assigned", time: "Now", icon: "👨‍🚒" },
     { status: "dispatched", label: "Dispatched", time: "Soon", icon: "🚑" },
     { status: "enroute", label: "En Route", time: "Upcoming", icon: "📍" },
-    { status: "arrived", label: "Arrived", time: "Upcoming", icon: "✅" }
+    { status: "arrived", label: "Arrived", time: "Upcoming", icon: "✅" },
   ];
 
   // Rescue team members
@@ -44,10 +56,15 @@ const RequestStatus = () => {
         { name: "John Smith", role: "Team Leader", badge: "👨‍🚒" },
         { name: "Sarah Johnson", role: "Medical Officer", badge: "👩‍⚕️" },
         { name: "Mike Chen", role: "Rescue Specialist", badge: "🛠️" },
-        { name: "Lisa Wang", role: "Communications", badge: "📞" }
+        { name: "Lisa Wang", role: "Communications", badge: "📞" },
       ],
       vehicle: "Rescue Vehicle #RV-7",
-      equipment: ["Medical Kit", "Rescue Tools", "Oxygen Tanks", "Communication Gear"]
+      equipment: [
+        "Medical Kit",
+        "Rescue Tools",
+        "Oxygen Tanks",
+        "Communication Gear",
+      ],
     },
     {
       id: 2,
@@ -56,76 +73,122 @@ const RequestStatus = () => {
         { name: "David Lee", role: "Team Leader", badge: "👨‍🚒" },
         { name: "Emma Wilson", role: "Medical Officer", badge: "👩‍⚕️" },
         { name: "Alex Brown", role: "Rescue Specialist", badge: "🛠️" },
-        { name: "Maria Garcia", role: "Communications", badge: "📞" }
+        { name: "Maria Garcia", role: "Communications", badge: "📞" },
       ],
       vehicle: "Ambulance #AMB-12",
-      equipment: ["Defibrillator", "First Aid", "Extrication Tools", "GPS Tracker"]
-    }
+      equipment: [
+        "Defibrillator",
+        "First Aid",
+        "Extrication Tools",
+        "GPS Tracker",
+      ],
+    },
   ];
 
-  useEffect(() => {
-    if (!shortCode) {
-      console.warn("Missing shortCode");
+  const loadRequestByShortCode = async (code) => {
+    if (!code?.trim()) {
+      setLookupError("Please enter a ShortCode.");
       return;
     }
 
-    (async () => {
-      try {
-        const res = await trackRescueRequest(shortCode);
-        const dto = res?.data ?? res;
+    try {
+      setIsSearching(true);
+      setLookupError("");
 
-        setRequest({
-          requestId: dto?.rescueRequestID || dto?.rescueRequestId || dto?.id || shortCode,
-          timestamp: dto?.createdTime || dto?.createdAt || new Date().toISOString(),
-          emergencyType: dto?.requestType || "Rescue",
-          description: dto?.description || "",
-          priorityLevel: dto?.priority || "Medium",
-          peopleCount: dto?.peopleCount ?? 1,
-          fullName: dto?.fullName || "",
-          phoneNumber: dto?.citizenPhone || dto?.phoneNumber || "",
-          address: dto?.address || "",
-          shareLocation: true,
-        });
+      setEta("8-10");
+      setDistance("3.2");
 
-        const randomTeam = rescueTeams[Math.floor(Math.random() * rescueTeams.length)];
-        setRescueTeam(randomTeam);
+      const res = await trackRescueRequest(code.trim());
+      const dto = res?.data ?? res;
 
-        startCountdown();
-      } catch (e) {
-        console.error("trackRescueRequest failed:", e);
-      }
-    })();
-  }, [shortCode]);
+      setRequest({
+        requestId:
+          dto?.rescueRequestID || dto?.rescueRequestId || dto?.id || code,
+        timestamp:
+          dto?.createdTime || dto?.createdAt || new Date().toISOString(),
+        emergencyType: dto?.requestType || "Rescue",
+        description: dto?.description || "",
+        priorityLevel: dto?.priority || "Medium",
+        peopleCount: dto?.peopleCount ?? 1,
+        fullName: dto?.fullName || dto?.citizenName || "",
+        phoneNumber: dto?.citizenPhone || dto?.phoneNumber || "",
+        email: dto?.citizenEmail || dto?.email || "",
+        address: dto?.address || "",
+        contactVia: dto?.contactVia || "Phone Call",
+        shareLocation: true,
+      });
+
+      const randomTeam =
+        rescueTeams[Math.floor(Math.random() * rescueTeams.length)];
+      setRescueTeam(randomTeam);
+
+      localStorage.setItem("lastShortCode", code.trim());
+      startCountdown();
+    } catch (error) {
+      console.error("Error loading request:", error);
+      setLookupError(
+        error?.response?.data?.message ||
+          "Failed to load request. Please check the ShortCode and try again.",
+      );
+      setRequest(null);
+      setRescueTeam(null);
+    } finally {
+      setIsSearching(false);
+    }
+  };
 
   const startCountdown = () => {
-    const timer = setInterval(() => {
-      setEta(prev => {
+    if (countdownRef.current) {
+      clearInterval(countdownRef.current);
+    }
+
+    countdownRef.current = setInterval(() => {
+      setEta((prev) => {
+        if (prev === "Arriving") return prev;
+
         const [min, max] = prev.split("-").map(Number);
         if (min > 1) {
           return `${min - 1}-${max - 1}`;
         } else {
-          clearInterval(timer);
+          clearInterval(countdownRef.current);
+          countdownRef.current = null;
           return "Arriving";
         }
       });
-    }, 30000); // Update every 30 seconds
+    }, 30000);
   };
 
-  const handleCancelRequest = () => {
-    setIsCancelling(true);
+  useEffect(() => {
+    if (shortCode) {
+      setInputCode(shortCode);
+      loadRequestByShortCode(shortCode);
+    }
+  }, [shortCode]);
 
-    // Simulate API call
-    setTimeout(() => {
-      localStorage.removeItem('lastRescueRequest');
-      setIsCancelling(false);
-      setShowCancelModal(false);
-      navigate("/citizen/hero");
-    }, 1500);
+  useEffect(() => {
+    return () => {
+      if (countdownRef.current) {
+        clearInterval(countdownRef.current);
+      }
+    };
+  }, []);
+
+  const handleSearchShortCode = () => {
+    loadRequestByShortCode(inputCode);
+  };
+
+  const handleCodeKeyDown = (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      loadRequestByShortCode(inputCode);
+    }
   };
 
   const handleContactTeam = () => {
     // In a real app, this would initiate a call or chat
-    alert(`Calling rescue team: ${rescueTeam ? rescueTeam.name : 'Emergency Services'}`);
+    alert(
+      `Calling rescue team: ${rescueTeam ? rescueTeam.name : "Emergency Services"}`,
+    );
   };
 
   const handleUpdateLocation = () => {
@@ -134,35 +197,54 @@ const RequestStatus = () => {
 
   const getStatusIcon = (status) => {
     switch (status) {
-      case "received": return "📥";
-      case "processing": return "⚙️";
-      case "assigned": return "👨‍🚒";
-      case "dispatched": return "🚑";
-      case "enroute": return "📍";
-      case "arrived": return "✅";
-      default: return "⏳";
+      case "received":
+        return "📥";
+      case "processing":
+        return "⚙️";
+      case "assigned":
+        return "👨‍🚒";
+      case "dispatched":
+        return "🚑";
+      case "enroute":
+        return "📍";
+      case "arrived":
+        return "✅";
+      default:
+        return "⏳";
     }
   };
 
   const getStatusColor = (status) => {
     switch (status) {
-      case "received": return "#3b82f6";
-      case "processing": return "#8b5cf6";
-      case "assigned": return "#f59e0b";
-      case "dispatched": return "#10b981";
-      case "enroute": return "#06b6d4";
-      case "arrived": return "#22c55e";
-      default: return "#64748b";
+      case "received":
+        return "#3b82f6";
+      case "processing":
+        return "#8b5cf6";
+      case "assigned":
+        return "#f59e0b";
+      case "dispatched":
+        return "#10b981";
+      case "enroute":
+        return "#06b6d4";
+      case "arrived":
+        return "#22c55e";
+      default:
+        return "#64748b";
     }
   };
 
   const getPriorityColor = (priority) => {
     switch (priority) {
-      case "Critical": return "#ef4444";
-      case "High": return "#f97316";
-      case "Medium": return "#eab308";
-      case "Low": return "#22c55e";
-      default: return "#64748b";
+      case "Critical":
+        return "#ef4444";
+      case "High":
+        return "#f97316";
+      case "Medium":
+        return "#eab308";
+      case "Low":
+        return "#22c55e";
+      default:
+        return "#64748b";
     }
   };
 
@@ -171,10 +253,30 @@ const RequestStatus = () => {
       <>
         <Header />
         <div className="request-status-container">
-          <div className="loading-state">
-            <div className="loading-spinner"></div>
-            <h3>Loading request details...</h3>
-            <p>Please wait while we retrieve your emergency request information.</p>
+          <div className="lookup-card">
+            <h2>Track Your Rescue Request</h2>
+            <p>Please enter your ShortCode to view the request status.</p>
+
+            <div className="lookup-form">
+              <input
+                type="text"
+                value={inputCode}
+                onChange={(e) => setInputCode(e.target.value.toUpperCase())}
+                onKeyDown={handleCodeKeyDown}
+                placeholder="Enter ShortCode (e.g. ABC123)"
+                className="lookup-input"
+              />
+              <button
+                type="button"
+                className="lookup-btn"
+                onClick={handleSearchShortCode}
+                disabled={isSearching}
+              >
+                {isSearching ? "Searching..." : "Track Request"}
+              </button>
+            </div>
+
+            {lookupError && <p className="lookup-error">{lookupError}</p>}
           </div>
         </div>
       </>
@@ -192,21 +294,17 @@ const RequestStatus = () => {
         <div className="status-header">
           <div className="header-content">
             <h1>Emergency Request Status</h1>
-            <p className="request-id">Request ID: <span>{request.requestId}</span></p>
+            <p className="request-id">
+              Request ID: <span>{request.requestId}</span>
+            </p>
             <p className="timestamp">
-              Submitted: {new Date(request.timestamp).toLocaleString('en-US', {
-                dateStyle: 'medium',
-                timeStyle: 'short'
+              Submitted:{" "}
+              {new Date(request.timestamp).toLocaleString("en-US", {
+                dateStyle: "medium",
+                timeStyle: "short",
               })}
             </p>
           </div>
-          <button
-            className="cancel-btn"
-            onClick={() => setShowCancelModal(true)}
-            disabled={currentStatusIndex > 2}
-          >
-            🚫 Cancel Request
-          </button>
         </div>
 
         {/* Status Summary Card */}
@@ -221,11 +319,14 @@ const RequestStatus = () => {
                 </p>
               </div>
             </div>
-            <div className="priority-badge" style={{
-              backgroundColor: getPriorityColor(request.priorityLevel) + '20',
-              color: getPriorityColor(request.priorityLevel),
-              borderColor: getPriorityColor(request.priorityLevel)
-            }}>
+            <div
+              className="priority-badge"
+              style={{
+                backgroundColor: getPriorityColor(request.priorityLevel) + "20",
+                color: getPriorityColor(request.priorityLevel),
+                borderColor: getPriorityColor(request.priorityLevel),
+              }}
+            >
               {request.priorityLevel} Priority
             </div>
           </div>
@@ -233,7 +334,7 @@ const RequestStatus = () => {
           <div className="summary-stats">
             <div className="stat-item">
               <div className="stat-label">Estimated Arrival</div>
-              <div className="stat-value eta">{eta} minutes</div>
+              <div className="stat-value eta">{eta === "Arriving" ? eta : `${eta} minutes`}</div>
             </div>
             <div className="stat-item">
               <div className="stat-label">Distance</div>
@@ -243,7 +344,9 @@ const RequestStatus = () => {
               <div className="stat-label">People</div>
               <div className="stat-value">
                 <span className="people-count">{request.peopleCount}</span>
-                <span className="people-label">person{request.peopleCount !== 1 ? 's' : ''}</span>
+                <span className="people-label">
+                  person{request.peopleCount !== 1 ? "s" : ""}
+                </span>
               </div>
             </div>
           </div>
@@ -256,14 +359,17 @@ const RequestStatus = () => {
             {statusFlow.map((step, index) => (
               <div
                 key={step.status}
-                className={`timeline-step ${index <= currentStatusIndex ? 'completed' : ''} ${index === currentStatusIndex ? 'current' : ''}`}
+                className={`timeline-step ${index <= currentStatusIndex ? "completed" : ""} ${index === currentStatusIndex ? "current" : ""}`}
               >
                 <div className="timeline-marker">
                   <div
                     className="marker-circle"
                     style={{
-                      backgroundColor: index <= currentStatusIndex ? getStatusColor(step.status) : '#e2e8f0',
-                      borderColor: getStatusColor(step.status)
+                      backgroundColor:
+                        index <= currentStatusIndex
+                          ? getStatusColor(step.status)
+                          : "#e2e8f0",
+                      borderColor: getStatusColor(step.status),
                     }}
                   >
                     {getStatusIcon(step.status)}
@@ -272,7 +378,10 @@ const RequestStatus = () => {
                     <div
                       className="timeline-line"
                       style={{
-                        backgroundColor: index < currentStatusIndex ? getStatusColor(step.status) : '#e2e8f0'
+                        backgroundColor:
+                          index < currentStatusIndex
+                            ? getStatusColor(step.status)
+                            : "#e2e8f0",
                       }}
                     ></div>
                   )}
@@ -309,8 +418,13 @@ const RequestStatus = () => {
                   <h3>{rescueTeam.name}</h3>
                 </div>
                 <div className="team-details">
-                  <p><strong>Vehicle:</strong> {rescueTeam.vehicle}</p>
-                  <p><strong>Equipment:</strong> {rescueTeam.equipment.join(", ")}</p>
+                  <p>
+                    <strong>Vehicle:</strong> {rescueTeam.vehicle}
+                  </p>
+                  <p>
+                    <strong>Equipment:</strong>{" "}
+                    {rescueTeam.equipment.join(", ")}
+                  </p>
                 </div>
               </div>
 
@@ -362,8 +476,10 @@ const RequestStatus = () => {
             <div className="detail-item">
               <span className="detail-label">Location Sharing</span>
               <span className="detail-value">
-                <span className={`status-tag ${request.shareLocation ? 'active' : 'inactive'}`}>
-                  {request.shareLocation ? '📍 Enabled' : '❌ Disabled'}
+                <span
+                  className={`status-tag ${request.shareLocation ? "active" : "inactive"}`}
+                >
+                  {request.shareLocation ? "📍 Enabled" : "❌ Disabled"}
                 </span>
               </span>
             </div>
@@ -374,7 +490,10 @@ const RequestStatus = () => {
           </div>
 
           <div className="action-buttons">
-            <button className="action-btn secondary" onClick={handleUpdateLocation}>
+            <button
+              className="action-btn secondary"
+              onClick={handleUpdateLocation}
+            >
               📍 Update Location
             </button>
             <button className="action-btn primary" onClick={handleContactTeam}>
@@ -390,7 +509,9 @@ const RequestStatus = () => {
             <div className="tip-card">
               <div className="tip-icon">🏠</div>
               <h4>Stay in a Safe Location</h4>
-              <p>Remain in a secure area away from danger until help arrives.</p>
+              <p>
+                Remain in a secure area away from danger until help arrives.
+              </p>
             </div>
             <div className="tip-card">
               <div className="tip-icon">📱</div>
@@ -400,62 +521,21 @@ const RequestStatus = () => {
             <div className="tip-card">
               <div className="tip-icon">🔦</div>
               <h4>Signal Your Location</h4>
-              <p>Use lights, sounds, or visible markers to help rescuers find you.</p>
+              <p>
+                Use lights, sounds, or visible markers to help rescuers find
+                you.
+              </p>
             </div>
             <div className="tip-card">
               <div className="tip-icon">👥</div>
               <h4>Stay With Others</h4>
-              <p>If possible, remain with other people for safety and support.</p>
+              <p>
+                If possible, remain with other people for safety and support.
+              </p>
             </div>
           </div>
         </div>
       </div>
-
-      {/* Cancel Request Modal */}
-      {showCancelModal && (
-        <div className="modal-overlay">
-          <div className="modal-content">
-            <div className="modal-header">
-              <h3>Cancel Emergency Request?</h3>
-              <button className="modal-close" onClick={() => setShowCancelModal(false)}>×</button>
-            </div>
-            <div className="modal-body">
-              <div className="warning-icon">⚠️</div>
-              <p>
-                Are you sure you want to cancel this emergency request?
-                This action cannot be undone.
-              </p>
-              <p className="warning-text">
-                <strong>Important:</strong> Only cancel if the emergency situation has been resolved
-                or if this was requested in error.
-              </p>
-            </div>
-            <div className="modal-actions">
-              <button
-                className="modal-btn secondary"
-                onClick={() => setShowCancelModal(false)}
-                disabled={isCancelling}
-              >
-                Keep Request
-              </button>
-              <button
-                className="modal-btn danger"
-                onClick={handleCancelRequest}
-                disabled={isCancelling}
-              >
-                {isCancelling ? (
-                  <>
-                    <span className="spinner small"></span>
-                    Cancelling...
-                  </>
-                ) : (
-                  "Yes, Cancel Request"
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </>
   );
 };
