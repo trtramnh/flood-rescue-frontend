@@ -45,55 +45,6 @@ const ChangeView = ({ center, zoom }) => {
 
 const Dashboard = () => {
 
-
-
-  const mapStatusToUI = (status) => {
-    const s = (status || "").toLowerCase();
-    if (s === "pending") return "pending";
-    if (s === "processing" || s === "in_progress") return "in_progress";
-    if (s === "completed") return "completed";
-    return "pending";
-  };
-
-  const mapRequestToUI = (r) => {
-    const requestType = r.requestType ?? r.RequestType ?? "";
-    const status = r.status ?? r.Status ?? "";
-    const lat = Number(r.locationLatitude ?? r.LocationLatitude ?? 0);
-    const lng = Number(r.locationLongitude ?? r.LocationLongitude ?? 0);
-    const peopleCount = Number(r.peopleCount ?? r.PeopleCount ?? 1);
-    const imageUrls = r.imageUrls ?? r.ImageUrls ?? [];
-
-    const isSupply = String(requestType).toLowerCase() === "supply";
-    const uiStatus = mapStatusToUI(status);
-
-    return {
-      id: r.rescueRequestID ?? r.RescueRequestID ?? r.id ?? r.Id,
-      requestId: r.shortCode ?? r.ShortCode ?? "",
-      fullName: r.citizenName ?? r.CitizenName ?? "Citizen",
-      phoneNumber: r.citizenPhone ?? r.CitizenPhone ?? "",
-      address: r.address ?? r.Address ?? "N/A",
-      location: {
-        lat,
-        lng,
-      },
-      emergencyType: requestType || "Unknown",
-      emergencyCategory: isSupply ? "supply" : "life_threatening",
-      peopleCount,
-      priorityLevel: isSupply ? "Medium" : "Critical",
-      description: r.description ?? r.Description ?? "",
-      status: uiStatus,
-      timestamp: r.createdTime || r.CreatedTime
-        ? new Date(r.createdTime ?? r.CreatedTime).toLocaleString("vi-VN")
-        : "",
-      contactVia: "Phone Call",
-      imageUrl: Array.isArray(imageUrls) && imageUrls.length > 0 ? imageUrls[0] : "",
-      isNew: uiStatus === "pending",
-      waterLevel: "0m",
-      specialNeeds: "",
-    };
-  };
-
-
   const [allRequests, setAllRequests] = useState([]);
   const [teams, setTeams] = useState([]);
   const [teamsLoading, setTeamsLoading] = useState(false);
@@ -126,7 +77,96 @@ const Dashboard = () => {
 
   const [unreadCount, setUnreadCount] = useState(0);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [addressMap, setAddressMap] = useState({});
 
+  const mapStatusToUI = (status) => {
+    const s = (status || "").toLowerCase();
+    if (s === "pending") return "pending";
+    if (s === "processing" || s === "in_progress") return "in_progress";
+    if (s === "completed") return "completed";
+    return "pending";
+  };
+  const getAddressFromCoordinates = async (lat, lng) => {
+    try {
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lng)}`,
+        {
+          headers: {
+            "Accept-Language": "vi",
+          },
+        }
+      );
+
+      if (!res.ok) {
+        throw new Error(`Reverse geocoding failed: ${res.status}`);
+      }
+
+      const data = await res.json();
+      return data?.display_name || "";
+    } catch (error) {
+      console.error("Reverse geocoding failed:", error);
+      return "";
+    }
+  };
+  const mapRequestToUI = (r) => {
+    const requestType = r.requestType ?? r.RequestType ?? "";
+    const status = r.status ?? r.Status ?? "";
+    const lat = Number(r.locationLatitude ?? r.LocationLatitude ?? 0);
+    const lng = Number(r.locationLongitude ?? r.LocationLongitude ?? 0);
+    const imageUrls = r.imageUrls ?? r.ImageUrls ?? [];
+
+    const isSupply = String(requestType).toLowerCase() === "supply";
+    const uiStatus = mapStatusToUI(status);
+
+    return {
+      id: r.rescueRequestID ?? r.RescueRequestID ?? r.id ?? r.Id,
+      requestId: r.shortCode ?? r.ShortCode ?? "",
+      fullName: r.citizenName ?? r.CitizenName ?? "Citizen",
+      phoneNumber: r.citizenPhone ?? r.CitizenPhone ?? "",
+      address: r.address ?? r.Address ?? `${lat.toFixed(5)}, ${lng.toFixed(5)}`,
+      location: {
+        lat,
+        lng,
+      },
+      emergencyType: requestType || "Unknown",
+      emergencyCategory: isSupply ? "supply" : "life_threatening",
+      peopleCount: 0,
+      description: r.description ?? r.Description ?? "",
+      status: uiStatus,
+      timestamp:
+        r.createdTime || r.CreatedTime
+          ? new Date(r.createdTime ?? r.CreatedTime).toLocaleString("vi-VN")
+          : "",
+      contactVia: "Phone Call",
+      imageUrl: Array.isArray(imageUrls) && imageUrls.length > 0 ? imageUrls[0] : "",
+      isNew: uiStatus === "pending",
+      waterLevel: "0m",
+      specialNeeds: "",
+    };
+  };
+
+  useEffect(() => {
+    const loadSelectedAddress = async () => {
+      if (!selectedRequest?.id) return;
+
+      if (addressMap[selectedRequest.id]) return;
+
+      const lat = selectedRequest?.location?.lat;
+      const lng = selectedRequest?.location?.lng;
+
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+
+      const address = await getAddressFromCoordinates(lat, lng);
+
+      setAddressMap((prev) => ({
+        ...prev,
+        [selectedRequest.id]:
+          address || `${lat.toFixed(6)}, ${lng.toFixed(6)}`,
+      }));
+    };
+
+    loadSelectedAddress();
+  }, [selectedRequest, addressMap]);
 
   const extractApiData = (res) => {
     if (!res) return null;
@@ -277,7 +317,16 @@ const Dashboard = () => {
   };
 
   const filteredRequests = getFilteredRequests();
+  const availableTeams = teams.filter((t) => {
+    const status =
+      t.currentStatus ??
+      t.CurrentStatus ??
+      t.status ??
+      t.Status ??
+      "";
 
+    return String(status).toLowerCase() === "available";
+  });
 
 
   //load team
@@ -288,25 +337,40 @@ const Dashboard = () => {
 
       try {
         const res = await getAllRescueTeams(); // ApiResponse<List<...>>
-        if (res?.success && Array.isArray(res.content)) {
-          setTeams(res.content);
-          setSelectedTeamId("");
-          setDispatchError("");
-          setDispatchSuccess("");
-        } else {
-          setTeams([]);
-          setTeamsError(res?.message || "Failed to load rescue teams");
-        }
-      } catch (e) {
-        setTeams([]);
-        setTeamsError(e?.message || "Failed to load rescue teams");
-      } finally {
-        setTeamsLoading(false);
-      }
-    };
+        console.log("GET /RescueTeams:", res);
 
-    loadTeams();
-  }, []);
+        const data = extractApiData(res);
+
+       if (Array.isArray(data)) {
+        const availableOnly = data.filter((t) => {
+          const status =
+            t.currentStatus ??
+            t.CurrentStatus ??
+            t.status ??
+            t.Status ??
+            "";
+          return String(status).toLowerCase() === "available";
+        });
+
+        setTeams(availableOnly);
+        setSelectedTeamId("");
+        setDispatchError("");
+        setDispatchSuccess("");
+      } else {
+        setTeams([]);
+        setTeamsError(res?.message || "Failed to load rescue teams");
+      }
+    } catch (e) {
+      console.error("Load rescue teams failed:", e);
+      setTeams([]);
+      setTeamsError(e?.message || "Failed to load rescue teams");
+    } finally {
+      setTeamsLoading(false);
+    }
+  };
+
+  loadTeams();
+}, []);
 
 
   // Cập nhật unread count
@@ -866,21 +930,9 @@ const Dashboard = () => {
                         <div className="detail-row">
                           <span className="detail-label">📍 Address:</span>
                           <span className="detail-value">
-                            {request.address}
-                          </span>
-                        </div>
-
-                        <div className="detail-row">
-                          <span className="detail-label">💦 Water level:</span>
-                          <span className="detail-value">
-                            {request.waterLevel}
-                          </span>
-                        </div>
-
-                        <div className="detail-row">
-                          <span className="detail-label">👥 Numbers:</span>
-                          <span className="detail-value">
-                            {request.peopleCount} people
+                            {selectedRequest?.id === request.id
+                              ? addressMap[request.id] || request.address
+                              : request.address}
                           </span>
                         </div>
                       </div>
@@ -1097,12 +1149,6 @@ const Dashboard = () => {
                         </span>
                       </div>
                       <div className="detail-item">
-                        <span className="detail-label">
-                          Number of people:{" "}
-                          <span className="detail-value">
-                            {selectedRequest.peopleCount} people
-                          </span>
-                        </span>
                       </div>
                     </div>
 
@@ -1112,7 +1158,9 @@ const Dashboard = () => {
                         <span className="detail-label1">
                           Address:{" "}
                           <span className="detail-value">
-                            {selectedRequest.address}
+                            {addressMap[selectedRequest.id] ||
+                              selectedRequest.address ||
+                              `${selectedRequest.location.lat.toFixed(6)}, ${selectedRequest.location.lng.toFixed(6)}`}
                           </span>
                         </span>
                       </div>
@@ -1212,7 +1260,7 @@ const Dashboard = () => {
                               {teamsLoading ? "Loading teams..." : "Select rescue team"}
                             </option>
 
-                            {teams.map((t) => {
+                            {availableTeams.map((t) => {
                               const id = t.rescueTeamID ?? t.RescueTeamID ?? t.id ?? t.Id;
                               const label =
                                 t.teamName ??
@@ -1248,10 +1296,7 @@ const Dashboard = () => {
                         )}
                       </div>
 
-                      {/* OLD BUTTONS */}
-                      <div className="button-row1">
-                        ...
-                      </div>
+
 
 
                       <div className="button-row1">
