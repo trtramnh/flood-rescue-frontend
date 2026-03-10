@@ -7,6 +7,8 @@ import "leaflet/dist/leaflet.css";
 import { getAllRescueRequests } from "../../services/rescueRequestService.js";
 import { getAllRescueTeams } from "../../services/rescueTeamService.js";
 import { rescueMissionService } from "../../services/rescueMissionService.js";
+import { incidentReportService } from "../../services/incidentReportService.js";
+
 
 /* FIX ICON */
 delete L.Icon.Default.prototype._getIconUrl;
@@ -219,6 +221,14 @@ const Dashboard = () => {
   const [showCompleted, setShowCompleted] = useState(false);
   const [floodLevelFilter, setFloodLevelFilter] = useState("all"); // Lọc theo mức nước
 
+  //incident Report
+  const [pendingIncidents, setPendingIncidents] = useState([]);
+  const [incidentHistory, setIncidentHistory] = useState([]);
+  const [incidentLoading, setIncidentLoading] = useState(false);
+  const [incidentError, setIncidentError] = useState("");
+  const [selectedIncident, setSelectedIncident] = useState(null);
+  const [resolveNote, setResolveNote] = useState("");
+  const [resolvingIncident, setResolvingIncident] = useState(false);
   // State cho thông báo
   const [notifications, setNotifications] = useState([
     {
@@ -255,6 +265,79 @@ const Dashboard = () => {
   const [isPlayingAlert, setIsPlayingAlert] = useState(false);
 
   const audioRef = useRef(null);
+
+  const extractApiData = (res) => {
+    if (!res) return null;
+    if (Array.isArray(res)) return res;
+    if (Array.isArray(res?.data)) return res.data;
+    if (Array.isArray(res?.content)) return res.content;
+    if (Array.isArray(res?.data?.data)) return res.data.data;
+    if (Array.isArray(res?.data?.content)) return res.data.content;
+    return res?.data ?? res?.content ?? res;
+  };
+
+  const loadPendingIncidents = async () => {
+    try {
+      setIncidentLoading(true);
+      setIncidentError("");
+
+      const res = await incidentReportService.getPendingReports();
+      const data = extractApiData(res);
+
+      setPendingIncidents(Array.isArray(data) ? data : []);
+    } catch (e) {
+      console.error(e);
+      setIncidentError("Failed to load pending incidents.");
+    } finally {
+      setIncidentLoading(false);
+    }
+  };
+
+  const loadIncidentHistory = async () => {
+    try {
+      const res = await incidentReportService.getIncidentHistory();
+      const data = extractApiData(res);
+
+      setIncidentHistory(Array.isArray(data) ? data : []);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+  useEffect(() => {
+    loadPendingIncidents();
+    loadIncidentHistory();
+  }, []);
+  const handleResolveIncident = async (incidentReportID) => {
+    if (!incidentReportID) return;
+    if (!resolveNote.trim()) {
+      alert("Please enter coordinator note.");
+      return;
+    }
+
+    try {
+      setResolvingIncident(true);
+      setIncidentError("");
+
+      const res = await incidentReportService.resolveIncident({
+        incidentReportID,
+        coordinatorNote: resolveNote.trim(),
+      });
+
+      alert(res?.message || "Incident resolved successfully.");
+
+      setResolveNote("");
+      setSelectedIncident(null);
+
+      await loadPendingIncidents();
+      await loadIncidentHistory();
+    } catch (e) {
+      console.error(e);
+      setIncidentError("Resolve incident failed.");
+      alert(e?.message || "Resolve incident failed.");
+    } finally {
+      setResolvingIncident(false);
+    }
+  };
 
   // Thống kê theo chủ đề lũ lụt
   const stats = {
@@ -549,11 +632,11 @@ const Dashboard = () => {
     try {
       setDispatching(true);
 
-      const teamIdNum = Number(selectedTeamId);
+      const teamIdValue = Number(selectedTeamId);
 
       const res = await rescueMissionService.dispatch({
         rescueRequestID: selectedRequest.id,
-        rescueTeamID: teamIdNum,
+        rescueTeamID: teamIdValue,
       });
 
       if (!res?.success) {
@@ -570,10 +653,10 @@ const Dashboard = () => {
         data?.MissionId ??
         null;
 
-      const assignedTeamName = findTeamLabelById(teamIdNum);
+      const assignedTeamName = findTeamLabelById(teamIdValue);
 
       updateRequestAfterDispatch(selectedRequest.id, {
-        assignedTeamId: teamIdNum,
+        assignedTeamId: teamIdValue,
         assignedTeamName,
         rescueMissionId: missionId,
       });
@@ -1445,6 +1528,161 @@ const Dashboard = () => {
               )}
             </div>
           </div>
+        </div>
+        <div className="incident-section">
+          <div className="panel-header">
+            <h2>⚠️ Pending Incident Reports</h2>
+          </div>
+
+          {incidentLoading && <p>Loading incidents...</p>}
+          {incidentError && <p style={{ color: "red" }}>{incidentError}</p>}
+
+          {!incidentLoading && pendingIncidents.length === 0 && (
+            <p>No pending incidents.</p>
+          )}
+
+          <div className="requests-list">
+            {pendingIncidents.map((incident) => (
+              <div
+                key={incident.incidentReportID}
+                className={`request-card ${selectedIncident?.incidentReportID === incident.incidentReportID ? "selected" : ""}`}
+                onClick={() => setSelectedIncident(incident)}
+              >
+                <div className="request-card-header">
+                  <div className="request-id">#{incident.incidentReportID}</div>
+                  <div className="status-badge pending">Pending</div>
+                </div>
+
+                <div className="request-card-body">
+                  <h4 className="request-title">⚠️ {incident.title}</h4>
+
+                  <div className="request-details">
+                    <div className="detail-row">
+                      <span className="detail-label">Team:</span>
+                      <span className="detail-value">{incident.teamName}</span>
+                    </div>
+
+                    <div className="detail-row">
+                      <span className="detail-label">Reporter:</span>
+                      <span className="detail-value">{incident.reporterName}</span>
+                    </div>
+
+                    <div className="detail-row">
+                      <span className="detail-label">Description:</span>
+                      <span className="detail-value">{incident.description}</span>
+                    </div>
+
+                    <div className="detail-row">
+                      <span className="detail-label">Created:</span>
+                      <span className="detail-value">
+                        {incident.createdTime
+                          ? new Date(incident.createdTime).toLocaleString()
+                          : ""}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+        {selectedIncident && (
+          <div className="incident-section">
+            <div className="panel-header">
+              <h2>🛠 Resolve Incident</h2>
+            </div>
+
+            <div className="request-details-card">
+              <div className="details-grid">
+                <div className="detail-group full-width">
+                  <h4>Title</h4>
+                  <div className="description-box">{selectedIncident.title}</div>
+                </div>
+
+                <div className="detail-group full-width">
+                  <h4>Description</h4>
+                  <div className="description-box">{selectedIncident.description}</div>
+                </div>
+
+                <div className="detail-group">
+                  <h4>Team</h4>
+                  <div className="special-needs">{selectedIncident.teamName}</div>
+                </div>
+
+                <div className="detail-group">
+                  <h4>Reporter</h4>
+                  <div className="special-needs">{selectedIncident.reporterName}</div>
+                </div>
+
+                <div className="detail-group full-width">
+                  <h4>Coordinator Note</h4>
+                  <textarea
+                    value={resolveNote}
+                    onChange={(e) => setResolveNote(e.target.value)}
+                    rows={4}
+                    placeholder="Enter coordinator note..."
+                    style={{ width: "100%", padding: "12px", borderRadius: "8px" }}
+                  />
+                </div>
+              </div>
+
+              <div className="button-row1">
+                <button
+                  className="btn btn-success"
+                  onClick={() =>
+                    handleResolveIncident(selectedIncident.incidentReportID)
+                  }
+                  disabled={resolvingIncident || !resolveNote.trim()}
+                >
+                  {resolvingIncident ? "Resolving..." : "✅ Resolve Incident"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+        <div className="incident-section">
+          <div className="panel-header">
+            <h2>📜 Incident History</h2>
+          </div>
+
+          {incidentHistory.length === 0 ? (
+            <p>No resolved incidents yet.</p>
+          ) : (
+            <div className="history-tablewrap">
+              <table className="history-table">
+                <thead>
+                  <tr>
+                    <th>Title</th>
+                    <th>Team</th>
+                    <th>Reporter</th>
+                    <th>Resolver</th>
+                    <th>Created</th>
+                    <th>Resolved</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {incidentHistory.map((item) => (
+                    <tr key={item.incidentReportID}>
+                      <td>{item.title}</td>
+                      <td>{item.teamName}</td>
+                      <td>{item.reporterName}</td>
+                      <td>{item.resolverName}</td>
+                      <td>
+                        {item.createdTime
+                          ? new Date(item.createdTime).toLocaleString()
+                          : ""}
+                      </td>
+                      <td>
+                        {item.resolvedTime
+                          ? new Date(item.resolvedTime).toLocaleString()
+                          : ""}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       </div>
     </div>

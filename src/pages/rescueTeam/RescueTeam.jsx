@@ -9,6 +9,8 @@ import {
   deleteRescueTeam,
 } from "../../services/rescueTeamService";
 import { completeMission } from "../../services/rescueMissionService";
+import { incidentReportService } from "../../services/incidentReportService";
+
 
 export default function RescueTeam() {
   // Dùng teams làm nguồn dữ liệu, giữ tên requests để không phải đụng UI nhiều
@@ -137,45 +139,102 @@ export default function RescueTeam() {
   const [showProblemModal, setShowProblemModal] = useState(false);
   const [selectedRequestId, setSelectedRequestId] = useState(null);
   const [problemForm, setProblemForm] = useState({
+    title: "",
     description: "",
     severity: "medium",
   });
 
   const openProblemModal = (id) => {
     setSelectedRequestId(id);
-    setProblemForm({ description: "", severity: "medium" });
+    setProblemForm({
+      title: "",
+      description: "",
+      severity: "medium"
+    });
     setShowProblemModal(true);
   };
 
-  const closeProblemModal = () => {
-    setSelectedRequestId(null);
-    setShowProblemModal(false);
-  };
 
-  const submitProblem = () => {
-    if (!selectedRequestId || !problemForm.description.trim()) return;
 
-    const newProblem = {
-      id: Date.now().toString(),
-      description: problemForm.description.trim(),
-      severity: problemForm.severity, // low | medium | high
-      time: new Date(),
-    };
+  const submitProblem = async () => {
+    if (!selectedRequestId ||
+      !problemForm.title.trim() ||
+      !problemForm.description.trim()) { return; };
 
     const req = requests.find((x) => x.id === selectedRequestId);
+    if (!req) return;
 
-    setRequests((prev) =>
-      prev.map((r) =>
-        r.id === selectedRequestId
-          ? { ...r, problemReports: [...(r.problemReports || []), newProblem] }
-          : r
-      )
-    );
+    const raw = req.__raw || {};
 
-    if (req) addHistory("PROBLEM_REPORTED", req);
+    const rescueMissionID =
+      raw.rescueMissionID ??
+      raw.rescueMissionId ??
+      raw.missionId;
 
-    setShowProblemModal(false);
-    setSelectedRequestId(null);
+    if (!rescueMissionID) {
+      alert("Thiếu rescueMissionID để gửi incident report.");
+      return;
+    }
+
+    const payload = {
+      rescueMissionID,
+      title: problemForm.title.trim(),
+      description: problemForm.description.trim(),
+      latitude: Number(raw.currentLatitude ?? raw.latitude ?? 0),
+      longitude: Number(raw.currentLongitude ?? raw.longitude ?? 0),
+    };
+
+    try {
+      setLoading(true);
+      setErr("");
+
+      const res = await incidentReportService.reportIncident(payload);
+      const content = res?.content ?? res?.data?.content ?? res?.data ?? res;
+
+      const newProblem = {
+        id:
+          content?.incidentReportID ??
+          content?.incidentReportId ??
+          Date.now().toString(),
+        title: content?.title ?? payload.title,
+        description: content?.description ?? payload.description,
+        severity: problemForm.severity,
+        time: content?.createdTime ? new Date(content.createdTime) : new Date(),
+        incidentStatus:
+          content?.incidentStatus ??
+          content?.status ??
+          "Pending",
+      };
+
+      setRequests((prev) =>
+        prev.map((r) =>
+          r.id === selectedRequestId
+            ? {
+              ...r,
+              problemReports: [...(r.problemReports || []), newProblem],
+            }
+            : r
+        )
+      );
+
+      addHistory("PROBLEM_REPORTED", req);
+
+      setShowProblemModal(false);
+      setSelectedRequestId(null);
+      setProblemForm({
+        title: "",
+        description: "",
+        severity: "medium",
+      });
+
+      alert(res?.message || "Incident reported successfully.");
+    } catch (e) {
+      console.error(e);
+      setErr("Report incident failed.");
+      alert(e?.message || "Report incident failed.");
+    } finally {
+      setLoading(false);
+    }
   };
   const extractData = (res) => {
     if (!res) return null;
@@ -321,7 +380,7 @@ export default function RescueTeam() {
       setErr("");
 
       await rescueMissionService.confirmPickup({
-        rescueMissionID:rescueMissionId,
+        rescueMissionID: rescueMissionId,
         reliefOrderID: reliefOrderId,
       });
 
@@ -384,6 +443,15 @@ export default function RescueTeam() {
     () => filteredRequests.filter((r) => r.status === "completed"),
     [filteredRequests]
   );
+  const closeProblemModal = () => {
+    setShowProblemModal(false);
+    setSelectedRequestId(null);
+    setProblemForm({
+      title: "",
+      description: "",
+      severity: "medium",
+    });
+  };
 
   return (
     <div className="rescue-team-page">
@@ -567,6 +635,16 @@ export default function RescueTeam() {
           <div className="problem-modal">
             <h3>Report Problem</h3>
 
+            <label className="pm-label">Problem Title *</label>
+            <input
+              type="text"
+              value={problemForm.title}
+              onChange={(e) =>
+                setProblemForm((s) => ({ ...s, title: e.target.value }))
+              }
+              placeholder="Enter problem title..."
+            />
+
             <label className="pm-label">Problem Description *</label>
             <textarea
               value={problemForm.description}
@@ -592,17 +670,14 @@ export default function RescueTeam() {
             <div className="pm-actions">
               <button
                 className="pm-cancel"
-                onClick={() => {
-                  setShowProblemModal(false);
-                  setSelectedRequestId(null);
-                }}
+                onClick={closeProblemModal}
               >
                 Cancel
               </button>
 
               <button
                 className="pm-submit"
-                disabled={!problemForm.description.trim()}
+                disabled={!problemForm.title.trim() || !problemForm.description.trim() || loading}
                 onClick={submitProblem}
               >
                 Submit Report
