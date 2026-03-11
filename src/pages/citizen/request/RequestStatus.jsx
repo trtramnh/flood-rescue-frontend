@@ -4,6 +4,7 @@ import { trackRescueRequest } from "../../../services/rescueRequestService";
 import "./RequestStatus.css";
 import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import "../../../pages/home/Introduce.css";
+import signalRService from "../../../services/signalrService";
 
 const RequestStatus = () => {
   const [request, setRequest] = useState(null);
@@ -32,6 +33,57 @@ const RequestStatus = () => {
       loadRequestByShortCode(shortCode);
     }
   }, [shortCode]);
+  // SIGNALR REALTIME FOR CITIZEN 
+  // Citizen sẽ nhận update realtime khi mission thay đổi
+  useEffect(() => {
+
+    const handleMissionUpdate = (data) => {
+      console.log("Citizen realtime update:", data);
+
+      // Nếu request trùng shortCode thì reload lại data
+      if (data.requestShortCode === shortCode) {
+        loadRequestByShortCode(shortCode);
+      }
+    };
+
+    const initSignalR = async () => {
+      await signalRService.startConnection();
+
+      // Mission completed
+      signalRService.on("ReceiveMissionCompletedNotification", handleMissionUpdate);
+
+      // Team accepted
+      signalRService.on("ReceiveTeamAcceptedNotification", handleMissionUpdate);
+
+      // Team rejected
+      signalRService.on("ReceiveTeamRejectedNotification", handleMissionUpdate);
+    };
+
+    initSignalR();
+
+    return () => {
+      signalRService.off("ReceiveMissionCompletedNotification", handleMissionUpdate);
+      signalRService.off("ReceiveTeamAcceptedNotification", handleMissionUpdate);
+      signalRService.off("ReceiveTeamRejectedNotification", handleMissionUpdate);
+    };
+
+  }, []);
+  
+
+
+  // AUTO REFRESH REQUEST STATUS 
+  // Citizen sẽ tự động cập nhật trạng thái mỗi 10 giây
+  useEffect(() => {
+    if (!request?.shortCode) return;
+
+    const interval = setInterval(() => {
+      console.log("Auto refreshing request status...");
+      loadRequestByShortCode(request.shortCode);
+    }, 10000); // refresh mỗi 10 giây
+
+    return () => { clearInterval(interval) };
+  }, [request?.shortCode]);
+  // 
 
   const getStatusFlow = (requestType) => {
     const type = (requestType || "").toLowerCase();
@@ -117,7 +169,7 @@ const RequestStatus = () => {
       console.error("Error loading request:", error);
       setLookupError(
         error?.message ||
-          "Failed to load request. Please check the ShortCode and try again.",
+        "Failed to load request. Please check the ShortCode and try again.",
       );
       setRequest(null);
       setRescueTeam(null);
@@ -307,18 +359,16 @@ const RequestStatus = () => {
                   )}
 
                   <div
-                    className={`modern-icon ${
-                      isCompleted ? "completed" : isCurrent ? "current" : ""
-                    }`}
+                    className={`modern-icon ${isCompleted ? "completed" : isCurrent ? "current" : ""
+                      }`}
                   >
                     <span>{step.icon}</span>
                   </div>
 
                   <div className="modern-content">
                     <h4
-                      className={`${
-                        isCompleted || isCurrent ? "active-text" : ""
-                      }`}
+                      className={`${isCompleted || isCurrent ? "active-text" : ""
+                        }`}
                     >
                       {step.label}
                     </h4>
@@ -437,8 +487,21 @@ const RequestStatus = () => {
 
             <div className="detail-item">
               <span className="detail-label">Status</span>
-              <span className="detail-value status-text">
+              <span
+                className="detail-value status-text"
+                style={{ color: getStatusColor(request.status) }} // thêm màu theo status
+              >
                 {request.status || "N/A"}
+              </span>
+            </div>
+            {/* MISSION STATUS */}
+            <div className="detail-item">
+              <span className="detail-label">Mission Status</span>
+              <span
+                className="detail-value"
+                style={{ color: getStatusColor(request.missionStatus) }} // thêm màu
+              >
+                {request.missionStatus || "Not assigned yet"}
               </span>
             </div>
           </div>
