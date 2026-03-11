@@ -253,13 +253,37 @@ export default function RescueTeam() {
 
     const init = async () => {
       await signalRService.startConnection();
+
       signalRService.on("ReceiveMissionNotification", handleMissionNotification);
+      // ===== MISSION ASSIGNED REALTIME =====
+      signalRService.on("ReceiveMissionNotification", handleMissionNotification);
+
+      // ===== INCIDENT RESOLVED REALTIME (ADD) =====
+      signalRService.on("ReceiveIncidentResolvedNotification", (data) => {
+        console.log("Incident resolved:", data);
+
+        // update mission UI
+        setRequests((prev) =>
+          prev.map((r) =>
+            r.id === data.rescueMissionID
+              ? {
+                ...r,
+                incidentResolved: true,
+              }
+              : r
+          )
+        );
+
+        alert(data.message || "Incident has been resolved by coordinator.");
+      });
     };
 
     init();
 
     return () => {
       signalRService.off("ReceiveMissionNotification", handleMissionNotification);
+      
+      signalRService.off("ReceiveIncidentResolvedNotification");
     };
   }, []);
   const acceptRequest = async (id) => {
