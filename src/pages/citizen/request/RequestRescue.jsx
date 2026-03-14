@@ -3,7 +3,14 @@ import { useNavigate } from "react-router-dom";
 import "./RequestRescue.css";
 import Header from "../../../components/common/Header";
 
-import { MapContainer, TileLayer, Marker, useMap, Popup } from "react-leaflet";
+import {
+  MapContainer,
+  TileLayer,
+  Marker,
+  useMap,
+  Popup,
+  useMapEvents,
+} from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 
@@ -61,6 +68,16 @@ const ChangeView = ({ center, zoom }) => {
       duration: 1.2,
     });
   }, [map, center, zoom]);
+
+  return null;
+};
+
+const MapClickHandler = ({ onMapClick }) => {
+  useMapEvents({
+    click(e) {
+      onMapClick(e);
+    },
+  });
 
   return null;
 };
@@ -256,49 +273,49 @@ const RequestRescue = () => {
 
   const emergencyTypes = [
     {
-      value: "Người mắc kẹt trong nước",
+      value: "People trapped in floodwater",
       icon: "🌊",
-      description: "Người bị mắc kẹt do nước lũ dâng cao",
+      description: "People trapped due to rising floodwater",
     },
     {
-      value: "Nhà bị ngập",
+      value: "House flooded",
       icon: "🏠",
-      description: "Nhà cửa bị ngập nước, cần di dời",
+      description: "House flooded and needs evacuation",
     },
     {
-      value: "Cần thực phẩm/ nước uống",
+      value: "Need food / drinking water",
       icon: "📦",
-      description: "Cần tiếp tế lương thực, nước sạch",
+      description: "Require food supplies and clean water",
     },
     {
-      value: "Cần thuốc men",
+      value: "Need medical supplies",
       icon: "💊",
-      description: "Cần thuốc men, vật tư y tế",
+      description: "Require medicine and medical equipment",
     },
     {
-      value: "Cần áo phao/thuyền",
+      value: "Need life jackets / boats",
       icon: "🛟",
-      description: "Cần phương tiện cứu hộ, thiết bị an toàn",
+      description: "Require rescue equipment or safety devices",
     },
     {
-      value: "Cần di dời khẩn cấp",
+      value: "Urgent evacuation needed",
       icon: "🚨",
-      description: "Cần sơ tán đến nơi an toàn",
+      description: "Need to be evacuated to a safe location immediately",
     },
     {
-      value: "Sạt lở đất",
+      value: "Landslide",
       icon: "⛰️",
-      description: "Sạt lở đất đá, đe dọa nhà cửa",
+      description: "Landslide threatening houses or people",
     },
     {
-      value: "Cây đổ/ đường sá hư hỏng",
+      value: "Fallen trees / damaged roads",
       icon: "🛣️",
-      description: "Cây đổ, đường sá hư hỏng do lũ",
+      description: "Fallen trees or damaged roads due to flooding",
     },
     {
-      value: "Mất điện/ mất liên lạc",
+      value: "Power outage / communication loss",
       icon: "📡",
-      description: "Mất điện, mất liên lạc với bên ngoài",
+      description: "Power outage or loss of communication",
     },
   ];
 
@@ -353,9 +370,9 @@ const RequestRescue = () => {
 
       // Map emergencyType -> requestType backend
       const isSupply =
-        formData.emergencyType === "Cần thực phẩm/ nước uống" ||
-        formData.emergencyType === "Cần thuốc men" ||
-        formData.emergencyType === "Cần áo phao/thuyền";
+        formData.emergencyType === "Need food / drinking water" ||
+        formData.emergencyType === "Need medical supplies" ||
+        formData.emergencyType === "Need life jackets / boats";
 
       const payload = {
         citizenName: formData.fullName.trim(),
@@ -571,26 +588,27 @@ const RequestRescue = () => {
 
                 {/* Cột phải: bản đồ */}
                 <div className="step-right">
-                  <div className="map-container">
-                    <div className="map-header">
-                      <div className="map-actions"></div>
-                    </div>
-                    <div className="map-wrapper">
+                  <div className="request-map-container2">
+                    <div className="request-map-header"></div>
+
+                    <div className="request-map-wrapper1">
                       <MapContainer
                         center={mapCenter}
                         zoom={mapZoom}
                         style={{
-                          height: "400px",
+                          height: "100%",
                           width: "100%",
                           borderRadius: "12px",
                         }}
-                        onClick={handleMapClick}
                       >
                         <ChangeView center={mapCenter} zoom={mapZoom} />
+                        <MapClickHandler onMapClick={handleMapClick} />
+
                         <TileLayer
                           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                          attribution="&copy; OpenStreetMap contributors"
                         />
+
                         <Marker position={mapCenter} icon={emergencyIcon}>
                           <Popup>
                             <strong>Emergency Location</strong>
@@ -598,17 +616,6 @@ const RequestRescue = () => {
                             Click anywhere on the map to update this position
                           </Popup>
                         </Marker>
-                        {userLocation && (
-                          <Marker position={userLocation} icon={locationIcon}>
-                            <Popup>
-                              <strong>Your Current Location</strong>
-                              <br />
-                              GPS Coordinates: {userLocation[0].toFixed(
-                                6,
-                              )}, {userLocation[1].toFixed(6)}
-                            </Popup>
-                          </Marker>
-                        )}
                       </MapContainer>
                     </div>
                   </div>

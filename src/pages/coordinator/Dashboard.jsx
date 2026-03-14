@@ -6,9 +6,13 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { getAllRescueRequests } from "../../services/rescueRequestService.js";
 import { getAllRescueTeams } from "../../services/rescueTeamService.js";
-import { rescueMissionService, completeMission } from "../../services/rescueMissionService.js";
+import {
+  rescueMissionService,
+  completeMission,
+} from "../../services/rescueMissionService.js";
 import { incidentReportService } from "../../services/incidentReportService.js";
 import signalRService from "../../services/signalrService.js";
+import { useNavigate } from "react-router-dom";
 
 /* FIX ICON */
 delete L.Icon.Default.prototype._getIconUrl;
@@ -25,14 +29,14 @@ const dotIcon = (color) =>
     className: "custom-dot-icon",
     html: `<div style="
       background-color: ${color};
-      width: 14px;
-      height: 14px;
+      width: 20px;
+      height: 20px;
       border-radius: 50%;
       border: 2px solid white;
       box-shadow: 0 0 6px rgba(0,0,0,0.5);
     "></div>`,
-    iconSize: [14, 14],
-    iconAnchor: [7, 7],
+    iconSize: [20, 20],
+    iconAnchor: [10, 10],
   });
 
 const ChangeView = ({ center, zoom }) => {
@@ -44,7 +48,6 @@ const ChangeView = ({ center, zoom }) => {
 };
 
 const Dashboard = () => {
-
   const [allRequests, setAllRequests] = useState([]);
   const [teams, setTeams] = useState([]);
   const [teamsLoading, setTeamsLoading] = useState(false);
@@ -53,7 +56,6 @@ const Dashboard = () => {
   const [dispatching, setDispatching] = useState(false);
   const [dispatchError, setDispatchError] = useState("");
   const [dispatchSuccess, setDispatchSuccess] = useState("");
-
 
   const [selectedRequest, setSelectedRequest] = useState(null);
   const [mapCenter, setMapCenter] = useState([10.775, 106.686]);
@@ -79,6 +81,33 @@ const Dashboard = () => {
   const [showNotifications, setShowNotifications] = useState(false);
   const [addressMap, setAddressMap] = useState({});
 
+  const navigate = useNavigate();
+
+  // Phân trang cho List of requirements
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 6;
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [
+    statusFilter,
+    typeFilter,
+    priorityFilter,
+    floodLevelFilter,
+    showCompleted,
+  ]);
+
+  const handleLogout = async () => {
+    try {
+      await signalRService.stopConnection();
+    } catch (e) {
+      console.warn("SignalR stop failed", e);
+    }
+
+    localStorage.removeItem("token");
+    localStorage.removeItem("userRole");
+    navigate("/login");
+  };
   const mapStatusToUI = (status) => {
     const s = (status || "").toLowerCase();
     if (s === "pending") return "pending";
@@ -94,7 +123,7 @@ const Dashboard = () => {
           headers: {
             "Accept-Language": "vi",
           },
-        }
+        },
       );
 
       if (!res.ok) {
@@ -109,39 +138,43 @@ const Dashboard = () => {
     }
   };
   const mapRequestToUI = (r) => {
-    const requestType = r.requestType ?? r.RequestType ?? "";
-    const status = r.status ?? r.Status ?? "";
-    const lat = Number(r.locationLatitude ?? r.LocationLatitude ?? 0);
-    const lng = Number(r.locationLongitude ?? r.LocationLongitude ?? 0);
-    const imageUrls = r.imageUrls ?? r.ImageUrls ?? [];
+    const lat = Number(r.LocationLatitude ?? r.locationLatitude ?? 0);
+    const lng = Number(r.LocationLongitude ?? r.locationLongitude ?? 0);
 
-    const isSupply = String(requestType).toLowerCase() === "supply";
-    const uiStatus = mapStatusToUI(status);
+    const uiStatus = mapStatusToUI(r.Status ?? r.status);
 
     return {
-      id: r.rescueRequestID ?? r.RescueRequestID ?? r.id ?? r.Id,
-      requestId: r.shortCode ?? r.ShortCode ?? "",
-      fullName: r.citizenName ?? r.CitizenName ?? "Citizen",
-      phoneNumber: r.citizenPhone ?? r.CitizenPhone ?? "",
-      address: r.address ?? r.Address ?? `${lat.toFixed(5)}, ${lng.toFixed(5)}`,
-      location: {
-        lat,
-        lng,
-      },
-      emergencyType: requestType || "Unknown",
-      emergencyCategory: isSupply ? "supply" : "life_threatening",
-      peopleCount: 0,
-      description: r.description ?? r.Description ?? "",
+      id: r.RescueRequestID ?? r.rescueRequestID,
+      requestId: r.ShortCode ?? r.shortCode,
+      fullName: r.CitizenName ?? r.citizenName ?? "Citizen",
+      phoneNumber: r.CitizenPhone ?? r.citizenPhone ?? "",
+      address: `${lat.toFixed(5)}, ${lng.toFixed(5)}`,
+      location: { lat, lng },
+
+      emergencyType: r.RequestType ?? r.requestType ?? "Unknown",
+
+      emergencyCategory:
+        (r.RequestType ?? r.requestType)?.toLowerCase() === "supply"
+          ? "supply"
+          : "life_threatening",
+
+      description: r.Description ?? r.description ?? "",
+
       status: uiStatus,
-      timestamp:
-        r.createdTime || r.CreatedTime
-          ? new Date(r.createdTime ?? r.CreatedTime).toLocaleString("vi-VN")
+
+      timestamp: r.CreatedTime
+        ? new Date(r.CreatedTime).toLocaleString("vi-VN")
+        : "",
+
+      imageUrl:
+        Array.isArray(r.ImageUrls) && r.ImageUrls.length > 0
+          ? r.ImageUrls[0]
           : "",
-      contactVia: "Phone Call",
-      imageUrl: Array.isArray(imageUrls) && imageUrls.length > 0 ? imageUrls[0] : "",
+
       isNew: uiStatus === "pending",
+
       waterLevel: "0m",
-      specialNeeds: "",
+      peopleCount: 0,
     };
   };
 
@@ -160,8 +193,7 @@ const Dashboard = () => {
 
       setAddressMap((prev) => ({
         ...prev,
-        [selectedRequest.id]:
-          address || `${lat.toFixed(6)}, ${lng.toFixed(6)}`,
+        [selectedRequest.id]: address || `${lat.toFixed(6)}, ${lng.toFixed(6)}`,
       }));
     };
 
@@ -170,21 +202,30 @@ const Dashboard = () => {
 
   const extractApiData = (res) => {
     if (!res) return null;
+
     if (Array.isArray(res)) return res;
-    if (Array.isArray(res?.data)) return res.data;
-    if (Array.isArray(res?.content)) return res.content;
-    if (Array.isArray(res?.data?.data)) return res.data.data;
-    if (Array.isArray(res?.data?.content)) return res.data.content;
-    return res?.data ?? res?.content ?? res;
+
+    if (Array.isArray(res.data)) return res.data;
+
+    if (Array.isArray(res.content)) return res.content;
+
+    if (Array.isArray(res.content?.data)) return res.content.data;
+
+    if (Array.isArray(res.data?.data)) return res.data.data;
+
+    if (Array.isArray(res.data?.content)) return res.data.content;
+
+    return [];
   };
 
   useEffect(() => {
+
     const handleTeamAccepted = (data) => {
       console.log("TeamAcceptedNotification:", data);
 
       setAllRequests((prev) =>
         prev.map((r) =>
-          r.rescueMissionId === data.requestShortCode
+          r.requestId === (data.requestShortCode || data.ShortCode)
             ? {
               ...r,
               status: "in_progress",
@@ -195,7 +236,6 @@ const Dashboard = () => {
         )
       );
 
-      // ADD NOTIFICATION
       setNotifications((prev) => [
         {
           id: Date.now(),
@@ -209,23 +249,24 @@ const Dashboard = () => {
         ...prev,
       ]);
     };
-    setUnreadCount((c) => c + 1);
 
     const handleTeamRejected = (data) => {
       console.log("TeamRejectedNotification:", data);
 
       setAllRequests((prev) =>
         prev.map((r) =>
-          r.requestId === data.requestShortCode ? {
-            ...r,
-            status: "pending",
-            assignedTeamId: null,
-            assignedTeamName: null,
-            rescueMissionId: null,
-          }
+          r.requestId === data.requestShortCode
+            ? {
+              ...r,
+              status: "pending",
+              assignedTeamId: null,
+              assignedTeamName: null,
+              rescueMissionId: null,
+            }
             : r
         )
       );
+
       setNotifications((prev) => [
         {
           id: Date.now(),
@@ -238,9 +279,6 @@ const Dashboard = () => {
         },
         ...prev,
       ]);
-      setUnreadCount((c) => c + 1);
-
-      alert(data.actionMessage || "Team rejected mission. Please assign another team.");
     };
 
     const handleMissionCompleted = (data) => {
@@ -249,13 +287,11 @@ const Dashboard = () => {
       setAllRequests((prev) =>
         prev.map((r) =>
           r.requestId === data.requestShortCode
-            ? {
-              ...r,
-              status: "completed",
-            }
+            ? { ...r, status: "completed" }
             : r
         )
       );
+
       setNotifications((prev) => [
         {
           id: Date.now(),
@@ -268,8 +304,8 @@ const Dashboard = () => {
         },
         ...prev,
       ]);
-      setUnreadCount((c) => c + 1);
     };
+
     const handleIncidentReported = (data) => {
       console.log("IncidentReportedNotification:", data);
 
@@ -284,6 +320,7 @@ const Dashboard = () => {
         },
         ...prev,
       ]);
+
       setNotifications((prev) => [
         {
           id: Date.now(),
@@ -296,29 +333,48 @@ const Dashboard = () => {
         },
         ...prev,
       ]);
-      setUnreadCount((c) => c + 1);
+    };
 
-      alert(`Incident reported by ${data.teamName}: ${data.title}`);
+    const handleNewRescueRequest = (data) => {
+      console.log("NewRescueRequest:", data);
+
+      const newRequest = mapRequestToUI(data);
+
+      setAllRequests((prev) => [newRequest, ...prev]);
+
+      setNotifications((prev) => [
+        {
+          id: Date.now(),
+          type: "critical",
+          title: "New Rescue Request",
+          message: `New rescue request #${newRequest.requestId}`,
+          requestId: newRequest.requestId,
+          timestamp: new Date().toLocaleString(),
+          read: false,
+        },
+        ...prev,
+      ]);
     };
 
     const init = async () => {
       await signalRService.startConnection();
-
-      signalRService.on("ReceiveTeamAccepted", handleTeamAccepted);
-      signalRService.on("ReceiveTeamRejected", handleTeamRejected);
-      signalRService.on("ReceiveMissionCompleted", handleMissionCompleted);
-      signalRService.on("ReceiveIncidentReported", handleIncidentReported);
+      signalRService.on("ReceiveTeamResponse", handleTeamAccepted);
+      signalRService.on("MissionCompleted", handleMissionCompleted);
+      signalRService.on("IncidentReported", handleIncidentReported);
+      signalRService.on("NewRescueRequest", handleNewRescueRequest);
     };
 
     init();
 
     return () => {
-      signalRService.off("ReceiveTeamAccepted", handleTeamAccepted);
-      signalRService.off("ReceiveTeamRejected", handleTeamRejected);
-      signalRService.off("ReceiveMissionCompleted", handleMissionCompleted);
-      signalRService.off("ReceiveIncidentReported", handleIncidentReported);
+      signalRService.off("ReceiveTeamResponse", handleTeamAccepted);
+      signalRService.off("MissionCompleted", handleMissionCompleted);
+      signalRService.off("IncidentReported", handleIncidentReported);
+      signalRService.off("NewRescueRequest", handleNewRescueRequest);
     };
+
   }, []);
+
   const loadPendingIncidents = async () => {
     try {
       setIncidentLoading(true);
@@ -326,6 +382,7 @@ const Dashboard = () => {
 
       const res = await incidentReportService.getPendingReports();
       const data = extractApiData(res);
+      console.log("Teams extracted:", data);
 
       setPendingIncidents(Array.isArray(data) ? data : []);
     } catch (e) {
@@ -340,6 +397,7 @@ const Dashboard = () => {
     try {
       const res = await incidentReportService.getIncidentHistory();
       const data = extractApiData(res);
+      console.log("Teams extracted:", data);
 
       setIncidentHistory(Array.isArray(data) ? data : []);
     } catch (e) {
@@ -458,42 +516,30 @@ const Dashboard = () => {
   };
 
   const filteredRequests = getFilteredRequests();
-  const availableTeams = teams.filter((t) => {
-    const status =
-      t.currentStatus ??
-      t.CurrentStatus ??
-      t.status ??
-      t.Status ??
-      "";
+  const totalPages = Math.ceil(filteredRequests.length / itemsPerPage);
 
-    return String(status).toLowerCase() === "available";
-  });
+  const paginatedRequests = filteredRequests.slice(
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage,
+  );
 
+  const availableTeams = teams;
 
   //load team
   useEffect(() => {
     const loadTeams = async () => {
-      setTeamsLoading(true);
-      setTeamsError("");
-
       try {
-        const res = await getAllRescueTeams(); // ApiResponse<List<...>>
-        console.log("GET /RescueTeams:", res);
+        setTeamsLoading(true);
+        setTeamsError("");
+
+        const res = await getAllRescueTeams();
+        console.log("teams API:", res);
 
         const data = extractApiData(res);
+        console.log("Teams extracted:", data);
 
         if (Array.isArray(data)) {
-          const availableOnly = data.filter((t) => {
-            const status =
-              t.currentStatus ??
-              t.CurrentStatus ??
-              t.status ??
-              t.Status ??
-              "";
-            return String(status).toLowerCase() === "available";
-          });
-
-          setTeams(availableOnly);
+          setTeams(data);
           setSelectedTeamId("");
           setDispatchError("");
           setDispatchSuccess("");
@@ -501,10 +547,10 @@ const Dashboard = () => {
           setTeams([]);
           setTeamsError(res?.message || "Failed to load rescue teams");
         }
-      } catch (e) {
-        console.error("Load rescue teams failed:", e);
+      } catch (err) {
+        console.error("Load teams error:", err);
         setTeams([]);
-        setTeamsError(e?.message || "Failed to load rescue teams");
+        setTeamsError("Failed to load rescue teams");
       } finally {
         setTeamsLoading(false);
       }
@@ -513,41 +559,44 @@ const Dashboard = () => {
     loadTeams();
   }, []);
 
-
   // Cập nhật unread count
   useEffect(() => {
-    const unread = notifications.filter((n) => !n.read).length;
-    setUnreadCount(unread);
+    setUnreadCount(notifications.filter((n) => !n.read).length);
   }, [notifications]);
   //load data thực tế
-  useEffect(() => {
-    const loadRealRequests = async () => {
-      try {
-        const res = await getAllRescueRequests();
-        console.log("GET /RescueRequests:", res);
-        if (res?.success && Array.isArray(res.content)) {
-          const normalized = res.content
-            .map(mapRequestToUI)
-            .filter(
-              (item) =>
-                item?.id &&
-                Number.isFinite(item?.location?.lat) &&
-                Number.isFinite(item?.location?.lng)
-            );
+  const loadRealRequests = async () => {
+    try {
+      const res = await getAllRescueRequests();
+      console.log("GET /RescueRequests:", res);
 
-          setAllRequests(normalized);
-        } else {
-          setAllRequests([]);
-        }
-      } catch (error) {
-        console.warn("Load rescue requests failed:", error);
+      const data = extractApiData(res);
+
+      if (!Array.isArray(data)) {
         setAllRequests([]);
+        return;
       }
-    };
 
+      const mapped = data
+        .map(mapRequestToUI)
+        .filter(
+          (item) =>
+            item?.id &&
+            Number.isFinite(item?.location?.lat) &&
+            Number.isFinite(item?.location?.lng),
+        );
+
+      console.log("Requests mapped:", mapped);
+
+      setAllRequests(mapped);
+    } catch (error) {
+      console.warn("Load rescue requests failed:", error);
+      setAllRequests([]);
+    }
+  };
+
+  useEffect(() => {
     loadRealRequests();
   }, []);
-
 
   // Các hàm xử lý
   const handleRequestClick = (request) => {
@@ -558,7 +607,8 @@ const Dashboard = () => {
     setDispatchError("");
     setDispatchSuccess("");
     // nếu đã assign team thì set dropdown theo
-    if (request?.assignedTeamId) setSelectedTeamId(String(request.assignedTeamId));
+    if (request?.assignedTeamId)
+      setSelectedTeamId(String(request.assignedTeamId));
     else setSelectedTeamId("");
 
     if (request.isNew) {
@@ -569,6 +619,7 @@ const Dashboard = () => {
       );
     }
   };
+
   const handleDispatchMission = async () => {
     setDispatchError("");
     setDispatchSuccess("");
@@ -578,7 +629,6 @@ const Dashboard = () => {
       return;
     }
 
-    // chỉ dispatch khi pending
     if (selectedRequest.status !== "pending") {
       setDispatchError("Only PENDING requests can be dispatched.");
       return;
@@ -592,63 +642,47 @@ const Dashboard = () => {
     try {
       setDispatching(true);
 
-      const teamIdValue = Number(selectedTeamId);
-
       const res = await rescueMissionService.dispatch({
         rescueRequestID: selectedRequest.id,
-        rescueTeamID: teamIdValue,
+        rescueTeamID: selectedTeamId,
       });
 
-      if (!res?.success) {
+      console.log("Dispatch API response:", res);
+
+      // ✅ check success đúng
+      if (res?.success === false) {
         setDispatchError(res?.message || "Dispatch mission failed.");
         return;
       }
 
-      // backend có thể trả DispatchMissionResponseDTO, mình đọc kiểu “defensive”
-      const data = res?.content || res?.data || {};
+      const data = res?.content || {};
+
       const missionId =
-        data?.rescueMissionID ??
-        data?.RescueMissionID ??
-        data?.missionId ??
-        data?.MissionId ??
+        data.rescueMissionID ??
+        data.RescueMissionID ??
         null;
 
-      const assignedTeamName = findTeamLabelById(teamIdValue);
+      const assignedTeamName = findTeamLabelById(selectedTeamId);
 
       updateRequestAfterDispatch(selectedRequest.id, {
-        assignedTeamId: teamIdValue,
+        assignedTeamId: selectedTeamId,
         assignedTeamName,
         rescueMissionId: missionId,
       });
 
       setDispatchSuccess(
-        `Dispatched ${assignedTeamName} to request #${selectedRequest.requestId}` +
-        (missionId ? ` (Mission #${missionId})` : "")
+        `Dispatched ${assignedTeamName} to request #${selectedRequest.requestId}`
       );
+
+      await loadRealRequests();
     } catch (e) {
+      console.error(e);
       setDispatchError(e?.message || "Dispatch mission failed.");
     } finally {
       setDispatching(false);
     }
   };
 
-  const updateRequestStatus = (requestId, newStatus) => {
-    setAllRequests((prev) =>
-      prev.map((req) =>
-        req.id === requestId
-          ? { ...req, status: newStatus, isNew: false }
-          : req,
-      ),
-    );
-
-    if (selectedRequest && selectedRequest.id === requestId) {
-      setSelectedRequest((prev) => ({
-        ...prev,
-        status: newStatus,
-        isNew: false,
-      }));
-    }
-  };
   const updateRequestAfterDispatch = (requestId, payload) => {
     setAllRequests((prev) =>
       prev.map((req) => {
@@ -657,12 +691,9 @@ const Dashboard = () => {
         return {
           ...req,
           status: "in_progress",
-          isNew: false,
-
-          // lưu thông tin assign để UI dùng lại
-          assignedTeamId: payload.assignedTeamId ?? req.assignedTeamId,
-          assignedTeamName: payload.assignedTeamName ?? req.assignedTeamName,
-          rescueMissionId: payload.rescueMissionId ?? req.rescueMissionId,
+          assignedTeamId: payload.assignedTeamId,
+          assignedTeamName: payload.assignedTeamName,
+          rescueMissionId: payload.rescueMissionId,
         };
       })
     );
@@ -671,13 +702,13 @@ const Dashboard = () => {
       setSelectedRequest((prev) => ({
         ...prev,
         status: "in_progress",
-        isNew: false,
-        assignedTeamId: payload.assignedTeamId ?? prev.assignedTeamId,
-        assignedTeamName: payload.assignedTeamName ?? prev.assignedTeamName,
-        rescueMissionId: payload.rescueMissionId ?? prev.rescueMissionId,
+        assignedTeamId: payload.assignedTeamId,
+        assignedTeamName: payload.assignedTeamName,
+        rescueMissionId: payload.rescueMissionId,
       }));
     }
   };
+
   const markAllAsRead = () => {
     setNotifications((prev) => prev.map((noti) => ({ ...noti, read: true })));
   };
@@ -739,15 +770,9 @@ const Dashboard = () => {
       <div className="dashboard-content">
         {/* Dashboard Header */}
         <div className="dashboard-header">
-          <div>
+          <div className="noti">
             <h1>🌊 Flood Relief Coordination Board</h1>
-
-            <div className="noti">
-              <p className="dashboard-subtitle">
-                Emergency relief management and coordination system in flood
-                situations.
-              </p>
-
+            <div className="button">
               <button
                 className={`notification-bell ${unreadCount > 0 ? "active" : ""}`}
                 onClick={() => setShowNotifications(!showNotifications)}
@@ -756,6 +781,11 @@ const Dashboard = () => {
                 {unreadCount > 0 && (
                   <span className="notification-badge">{unreadCount}</span>
                 )}
+              </button>
+
+              <button className="logout-btn" onClick={handleLogout}>
+                <span className="logout-icon">↩</span>
+                <span>Logout</span>
               </button>
             </div>
           </div>
@@ -851,15 +881,6 @@ const Dashboard = () => {
               <div className="stat-number">{stats.critical}</div>
             </div>
           </div>
-
-          <div className="stat-card">
-            <div className="stat-icon flood">💦</div>
-            <div className="stat-info">
-              <h3>High water level areas</h3>
-              <div className="stat-number">{stats.highWaterLevel}</div>
-              <div className="stat-sub">(&gt;1.5m)</div>
-            </div>
-          </div>
         </div>
 
         {/* Alert Banner cho tình huống nguy cấp */}
@@ -901,79 +922,67 @@ const Dashboard = () => {
 
         {/* Filter Controls */}
         <div className="filter-section">
-          <h3>🔍 Filter rescue requests</h3>
+          <h3>🔎 Filter rescue requests</h3>
+
           <div className="filter-controls">
             <div className="filter-group">
-              <label>Status</label>
-              <select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-                className="filter-select"
-              >
-                <option value="active">Active</option>
-                <option value="pending">Pending</option>
-                <option value="in_progress">In Progress</option>
-                <option value="completed">Completed</option>
-                <option value="all">All</option>
-              </select>
+              <span className="filter-label">Rescue request status</span>
+              <div className="status-tabs">
+                <button
+                  className={`status-tab ${statusFilter === "active" ? "active" : ""}`}
+                  onClick={() => setStatusFilter("active")}
+                >
+                  ACTIVE
+                </button>
+
+                <button
+                  className={`status-tab ${statusFilter === "pending" ? "active" : ""}`}
+                  onClick={() => setStatusFilter("pending")}
+                >
+                  PENDING
+                </button>
+
+                <button
+                  className={`status-tab ${statusFilter === "in_progress" ? "active" : ""}`}
+                  onClick={() => setStatusFilter("in_progress")}
+                >
+                  IN_PROGRESS
+                </button>
+
+                <button
+                  className={`status-tab ${statusFilter === "completed" ? "active" : ""}`}
+                  onClick={() => setStatusFilter("completed")}
+                >
+                  COMPLETED
+                </button>
+              </div>
             </div>
 
             <div className="filter-group">
-              <label>Type of request</label>
-              <select
-                value={typeFilter}
-                onChange={(e) => setTypeFilter(e.target.value)}
-                className="filter-select"
-              >
-                {emergencyTypes.map((type) => (
-                  <option key={type} value={type}>
-                    {type === "all" ? "All types" : type}
-                  </option>
-                ))}
-              </select>
-            </div>
+              <span className="filter-label">Type of request</span>
+              <div className="type-tabs">
+                <button
+                  className={`type-tab ${typeFilter === "all" ? "active" : ""}`}
+                  onClick={() => setTypeFilter("all")}
+                >
+                  All
+                </button>
 
-            <div className="filter-group">
-              <label>Priority Level</label>
-              <select
-                value={priorityFilter}
-                onChange={(e) => setPriorityFilter(e.target.value)}
-                className="filter-select"
-              >
-                <option value="all">All priorities</option>
-                <option value="Critical">Critical</option>
-                <option value="High">High</option>
-                <option value="Medium">Medium</option>
-                <option value="Low">Low</option>
-              </select>
-            </div>
+                <button
+                  className={`type-tab emergency ${typeFilter === "emergency" ? "active" : ""}`}
+                  onClick={() => setTypeFilter("emergency")}
+                >
+                  🚨 Emergency
+                </button>
 
-            <div className="filter-group">
-              <label>Flood Level</label>
-              <select
-                value={floodLevelFilter}
-                onChange={(e) => setFloodLevelFilter(e.target.value)}
-                className="filter-select"
-              >
-                <option value="all">All flood levels</option>
-                <option value="low">Low (&lt;0.5m)</option>
-                <option value="medium">Medium (0.5-1.5m)</option>
-                <option value="high">High (&gt;1.5m)</option>
-              </select>
+                <button
+                  className={`type-tab supply ${typeFilter === "supply" ? "active" : ""}`}
+                  onClick={() => setTypeFilter("supply")}
+                >
+                  📦 Supply
+                </button>
+              </div>
             </div>
-
-            <button
-              className="reset-filters-btn"
-              onClick={() => {
-                setStatusFilter("active");
-                setTypeFilter("all");
-                setPriorityFilter("all");
-                setFloodLevelFilter("all");
-                setShowCompleted(false);
-              }}
-            >
-              🔄 Reset filters
-            </button>
           </div>
         </div>
 
@@ -982,7 +991,7 @@ const Dashboard = () => {
           {/* Left: Requests List */}
           <div className="requests-panel">
             <div className="panel-header">
-              <div>
+              <div className="list">
                 <h2>📋 List of requirements ({filteredRequests.length})</h2>
                 <span className="last-update">
                   {stats.newRequests > 0 && (
@@ -992,12 +1001,7 @@ const Dashboard = () => {
                   )}
                 </span>
               </div>
-              <div className="request-counts">
-                <span className="count-badge pending">{stats.pending}</span>
-                <span className="count-badge in-progress">
-                  {stats.inProgress}
-                </span>
-              </div>
+
             </div>
 
             <div className="requests-list">
@@ -1012,7 +1016,7 @@ const Dashboard = () => {
                   </button>
                 </div>
               ) : (
-                filteredRequests.map((request) => (
+                paginatedRequests.map((request) => (
                   <div
                     key={request.id}
                     className={`request-card ${selectedRequest?.id === request.id ? "selected" : ""} ${request.isNew ? "new" : ""}`}
@@ -1116,56 +1120,94 @@ const Dashboard = () => {
                 ))
               )}
             </div>
+
+            {filteredRequests.length > 0 && (
+              <div className="pagination">
+                <button
+                  className="pagination-btn"
+                  onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
+                  disabled={currentPage === 1}
+                >
+                  ← Previous
+                </button>
+
+                <div className="pagination-pages">
+                  {Array.from({ length: totalPages }, (_, index) => {
+                    const page = index + 1;
+                    return (
+                      <button
+                        key={page}
+                        className={`pagination-page ${currentPage === page ? "active" : ""}`}
+                        onClick={() => setCurrentPage(page)}
+                      >
+                        {page}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <button
+                  className="pagination-btn"
+                  onClick={() =>
+                    setCurrentPage((prev) => Math.min(prev + 1, totalPages))
+                  }
+                  disabled={currentPage === totalPages}
+                >
+                  Next →
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Right: Map and Details */}
+
           <div className="map-details-panel">
-            {/* Map Section */}
             <div className="map-section">
-              <div className="panel-header">
-                <h2>🗺️ Flood Map</h2>
-                <div className="map-legend">
-                  <div className="legend-item">
-                    <span className="legend-dot critical"></span>
-                    <span>Emergency</span>
-                  </div>
-                  <div className="legend-item">
-                    <span className="legend-dot medical"></span>
-                    <span>Medical</span>
-                  </div>
-                  <div className="legend-item">
-                    <span className="legend-dot supply"></span>
-                    <span>Supply</span>
+              <div className="map-wrapper">
+                <div className="panel-header">
+                  <h2>🗺️ Flood Map</h2>
+
+                  <div className="map-legend">
+                    <div className="legend-item">
+                      <span className="legend-dot critical"></span>
+                      <span>Emergency</span>
+                    </div>
+
+                    <div className="legend-item">
+                      <span className="legend-dot supply"></span>
+                      <span>Supply</span>
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              <div className="map-container">
-                <MapContainer
-                  center={mapCenter}
-                  zoom={mapZoom}
-                  style={{
-                    height: "400px",
-                    width: "100%",
-                    borderRadius: "10px",
-                  }}
-                >
-                  <ChangeView center={mapCenter} zoom={mapZoom} />
-                  <TileLayer
-                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                    attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-                  />
+                <div className="map-container">
+                  <MapContainer
+                    center={mapCenter}
+                    zoom={mapZoom}
+                    style={{
+                      height: "100%",
+                      width: "100%",
+                      borderRadius: "18px",
+                    }}
+                  >
+                    <ChangeView center={mapCenter} zoom={mapZoom} />
 
-                  {allRequests
-                    .filter((req) => (!showCompleted ? req.status !== "completed" : true))
-                    .filter(
-                      (req) =>
-                        req.location &&
-                        Number.isFinite(req.location.lat) &&
-                        Number.isFinite(req.location.lng)
-                    )
-                    .map((request) => {
-                      return (
+                    <TileLayer
+                      url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                      attribution="&copy; OpenStreetMap contributors"
+                    />
+
+                    {allRequests
+                      .filter((req) =>
+                        !showCompleted ? req.status !== "completed" : true,
+                      )
+                      .filter(
+                        (req) =>
+                          req.location &&
+                          Number.isFinite(req.location.lat) &&
+                          Number.isFinite(req.location.lng),
+                      )
+                      .map((request) => (
                         <Marker
                           key={request.id}
                           position={[
@@ -1173,11 +1215,11 @@ const Dashboard = () => {
                             request.location.lng,
                           ]}
                           icon={
-                            request.status === "pending"
+                            request.emergencyCategory === "life_threatening"
                               ? dotIcon("red")
-                              : request.status === "in_progress"
-                                ? dotIcon("orange")
-                                : dotIcon("green")
+                              : request.emergencyCategory === "supply"
+                                ? dotIcon("gold")
+                                : dotIcon("gray")
                           }
                           eventHandlers={{
                             click: () => handleRequestClick(request),
@@ -1191,343 +1233,283 @@ const Dashboard = () => {
                               <br />
                               <small>Water level: {request.waterLevel}</small>
                               <br />
-                              <small>
-                                Number of people: {request.peopleCount}
-                              </small>
+                              <small>People: {request.peopleCount}</small>
                               <br />
                               {request.isNew && <small>🆕 NEW</small>}
                             </div>
                           </Popup>
                         </Marker>
-                      );
-                    })}
-                </MapContainer>
-              </div>
-            </div>
+                      ))}
+                  </MapContainer>
+                </div>
 
-            {/* Details Section */}
-            <div className="details-section">
-              {selectedRequest ? (
-                <div className="request-details-card">
-                  <div className="details-header">
-                    <h3>📋 Request details #{selectedRequest.requestId}</h3>
-                    {selectedRequest.isNew && (
-                      <span className="new-tag">🆕 NEW</span>
-                    )}
-                  </div>
+                {/* PANEL NỔI */}
+                <div
+                  className={`details-overlay ${selectedRequest ? "open" : ""}`}
+                >
+                  {selectedRequest && (
+                    <div className="details-section floating">
+                      <div className="request-details-card1">
+                        <div className="details-header1">
+                          <h3>
+                            📋 Request details #{selectedRequest.requestId}
+                          </h3>
 
-                  <div className="details-grid">
-                    <div className="detail-group">
-                      <h4>👤 Information of requester</h4>
-                      <div className="detail-item">
-                        <span className="detail-label">
-                          Full name:{" "}
-                          <span className="detail-value">
-                            {selectedRequest.fullName}
-                          </span>
-                        </span>
-                      </div>
-                      <div className="detail-item">
-                        <span className="detail-label">
-                          Phone number:{" "}
-                          {selectedRequest.phoneNumber ? (
-                            <a
-                              href={`tel:${selectedRequest.phoneNumber}`}
-                              className="detail-value link"
+                          <div style={{ display: "flex", gap: "10px" }}>
+                            {selectedRequest.isNew && (
+                              <span className="new-tag">🆕 NEW</span>
+                            )}
+
+                            <button
+                              className="details-close-btn"
+                              onClick={() => setSelectedRequest(null)}
                             >
-                              {selectedRequest.phoneNumber}
-                            </a>
-                          ) : (
-                            <span className="detail-value">N/A</span>
-                          )}
-                        </span>
-                      </div>
-                      <div className="detail-item">
-                        <span className="detail-label">
-                          Contact via:{" "}
-                          <span className="detail-value">
-                            {selectedRequest.contactVia}
-                          </span>
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="detail-group">
-                      <h4>🌊 Flood Status</h4>
-                      <div className="detail-item">
-                        <span className="detail-label">
-                          Emergency type:{" "}
-                          <span className="detail-value badge">
-                            {selectedRequest.emergencyType ===
-                              "People trapped in the water"
-                              ? "🌊"
-                              : selectedRequest.emergencyType ===
-                                "The house was flooded."
-                                ? "🏠"
-                                : selectedRequest.emergencyType ===
-                                  "Food/water is needed."
-                                  ? "📦"
-                                  : selectedRequest.emergencyType ===
-                                    "Medicine is needed."
-                                    ? "💊"
-                                    : selectedRequest.emergencyType ===
-                                      "Life jackets/boat needed."
-                                      ? "🛟"
-                                      : selectedRequest.emergencyType ===
-                                        "Landslide"
-                                        ? "⛰️"
-                                        : "🚨"}
-                            {selectedRequest.emergencyType}
-                          </span>
-                        </span>
-                      </div>
-                      <div className="detail-item">
-                        <span className="detail-label">
-                          Water level:{" "}
-                          <span className="detail-value flood-level">
-                            {selectedRequest.waterLevel}
-                          </span>
-                        </span>
-                      </div>
-                      <div className="detail-item">
-                      </div>
-                    </div>
-
-                    <div className="detail-group full-width">
-                      <h4>📍 Location Information</h4>
-                      <div className="detail-item">
-                        <span className="detail-label1">
-                          Address:{" "}
-                          <span className="detail-value">
-                            {addressMap[selectedRequest.id] ||
-                              selectedRequest.address ||
-                              `${selectedRequest.location.lat.toFixed(6)}, ${selectedRequest.location.lng.toFixed(6)}`}
-                          </span>
-                        </span>
-                      </div>
-                      <div className="detail-item">
-                        <span className="detail-label1">
-                          Coordinates:{" "}
-                          <span className="detail-value">
-                            {selectedRequest.location.lat.toFixed(6)},{" "}
-                            {selectedRequest.location.lng.toFixed(6)}
-                          </span>
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="detail-group full-width">
-                      <h4>📝 Description of situation</h4>
-                      <div className="description-box">
-                        {selectedRequest.description}
-                      </div>
-                    </div>
-
-                    <div className="detail-group">
-                      <h4>🎯 Special needs</h4>
-                      <div className="special-needs">
-                        {selectedRequest.specialNeeds}
-                      </div>
-                    </div>
-
-                    <div className="detail-group">
-                      <h4>🖼️ Images</h4>
-                      {selectedRequest.imageUrl ? (
-                        <div className="image-preview">
-                          <img src={selectedRequest.imageUrl} alt="Request" />
+                              ×
+                            </button>
+                          </div>
                         </div>
-                      ) : (
-                        <div className="image-preview empty">No image</div>
-                      )}
-                    </div>
-                  </div>
 
-                  <div className="action-buttons">
-                    <div className="status-info">
-                      <span className="status-label">Current status:</span>
-                      <span
-                        className={`status-badge ${selectedRequest.status}`}
-                      >
-                        {selectedRequest.status === "pending"
-                          ? "⏳ Pending"
-                          : selectedRequest.status === "in_progress"
-                            ? "🚤 In progress"
-                            : "✅ Completed"}
-                      </span>
+                        <div className="details-grid1">
+                          <div className="detail-group1">
+                            <h4>👤 Information of requester</h4>
 
-                      {selectedRequest.status === "in_progress" && (
-                        <button
-                          className="btn btn-success"
-                          onClick={async () => {
-                            try {
+                            <div className="detail-item1">
+                              <span className="detail-label1">
+                                Full name:
+                                <span className="detail-value1">
+                                  {selectedRequest.fullName}
+                                </span>
+                              </span>
+                            </div>
 
-                              if (!selectedRequest.rescueMissionId) {
-                                alert("Rescue mission ID is missing.");
-                                return;
-                              }
-                              await completeMission(selectedRequest.rescueMissionId);
+                            <div className="detail-item1">
+                              <span className="detail-label1">
+                                Phone:
+                                {selectedRequest.phoneNumber ? (
+                                  <a
+                                    href={`tel:${selectedRequest.phoneNumber}`}
+                                    className="detail-value link"
+                                  >
+                                    {selectedRequest.phoneNumber}
+                                  </a>
+                                ) : (
+                                  <span className="detail-value">N/A</span>
+                                )}
+                              </span>
+                            </div>
+                          </div>
 
-                              updateRequestStatus(selectedRequest.id, "completed");
-                            } catch (err) {
-                              alert(err.message);
-                            }
-                          }}
-                        >
-                          ✅ Mark as completed
-                        </button>
-                      )}
-                    </div>
+                          <div className="detail-group1">
+                            <h4>🌊 Flood Status</h4>
 
-                    <div className="action-buttons-group">
+                            <div className="detail-item1">
+                              <span className="detail-label1">
+                                Emergency type:
+                                <span className="detail-value badge">
+                                  {selectedRequest.emergencyType}
+                                </span>
+                              </span>
+                            </div>
+                          </div>
 
-                      {/* DISPATCH SECTION */}
-                      <div className="dispatch-section">
-                        {selectedRequest?.assignedTeamId && (
-                          <div className="dispatch-assigned">
-                            Assigned: <b>{selectedRequest.assignedTeamName || `Team #${selectedRequest.assignedTeamId}`}</b>
-                            {selectedRequest.rescueMissionId && (
-                              <span className="dispatch-mission"> • Mission #{selectedRequest.rescueMissionId}</span>
+                          <div className="detail-group1 full-width1">
+                            <h4>📍 Location</h4>
+
+                            <div className="detail-item1">
+                              <span className="detail-label1">
+                                Address:
+                                <span className="detail-value">
+                                  {addressMap[selectedRequest.id] ||
+                                    selectedRequest.address}
+                                </span>
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="action-buttons1">
+                          <div className="dispatch-box">
+                            <div className="dispatch-header">
+                              <h4>🚑 Dispatch rescue team</h4>
+                            </div>
+
+                            <div className="dispatch-form">
+                              <select
+                                className="team-select"
+                                value={selectedTeamId}
+                                onChange={(e) => setSelectedTeamId(e.target.value)}
+                                disabled={
+                                  dispatching ||
+                                  selectedRequest.status !== "pending" ||
+                                  teamsLoading
+                                }
+                              >
+                                <option value="">
+                                  {teamsLoading
+                                    ? "Loading teams..."
+                                    : availableTeams.length === 0
+                                      ? "No available rescue teams"
+                                      : "Select rescue team"}
+                                </option>
+
+                                {teams.map((team) => (
+                                  <option
+                                    key={getTeamId(team)}
+                                    value={getTeamId(team)}
+                                    disabled={String(team.currentStatus).toLowerCase() !== "available"}
+                                  >
+                                    {getTeamLabel(team)} ({team.currentStatus})
+                                  </option>
+                                ))}
+                              </select>
+                              <button
+                                className="btn btn-primary"
+                                onClick={handleDispatchMission}
+                                disabled={
+                                  dispatching ||
+                                  !selectedTeamId ||
+                                  selectedRequest.status !== "pending"
+                                }
+                              >
+                                {dispatching
+                                  ? "Dispatching..."
+                                  : "🚀 Dispatch Mission"}
+                              </button>
+                            </div>
+
+                            {selectedRequest.assignedTeamName && (
+                              <div className="dispatch-info">
+                                <strong>Assigned team:</strong>{" "}
+                                {selectedRequest.assignedTeamName}
+                                {selectedRequest.rescueMissionId && (
+                                  <span>
+                                    {" "}
+                                    | Mission ID: #
+                                    {selectedRequest.rescueMissionId}
+                                  </span>
+                                )}
+                              </div>
+                            )}
+
+                            {dispatchError && (
+                              <p className="dispatch-error">{dispatchError}</p>
+                            )}
+                            {dispatchSuccess && (
+                              <p className="dispatch-success">
+                                {dispatchSuccess}
+                              </p>
+                            )}
+                            {teamsError && (
+                              <p className="dispatch-error">{teamsError}</p>
                             )}
                           </div>
-                        )}
-                        <div className="dispatch-row">
-                          <select
-                            className="dispatch-select"
-                            value={selectedTeamId}
-                            onChange={(e) => setSelectedTeamId(e.target.value)}
-                            disabled={teamsLoading || !selectedRequest || selectedRequest.status !== "pending"}
-                          >
-                            <option value="">
-                              {teamsLoading ? "Loading teams..." : "Select rescue team"}
-                            </option>
 
-                            {availableTeams.map((t) => {
-                              const id = t.rescueTeamID ?? t.RescueTeamID ?? t.id ?? t.Id;
-                              const label =
-                                t.teamName ??
-                                t.name ??
-                                t.rescueTeamName ??
-                                t.RescueTeamName ??
-                                `Team #${id}`;
-                              return (
-                                <option key={id} value={id}>
-                                  {label}
-                                </option>
-                              );
-                            })}
-                          </select>
+                          <div className="status-info1">
+                            <span className="status-label1">
+                              Current status:
+                            </span>
 
-                          <button
-                            className="btn btn-dispatch"
-                            onClick={handleDispatchMission}
-                            disabled={
-                              dispatching ||
-                              !selectedTeamId ||
-                              !selectedRequest ||
-                              selectedRequest.status !== "pending"}
-                          >
-                            {dispatching ? "Dispatching..." : "🚑 Dispatch Team"}
-                          </button>
+                            <span
+                              className={`status-badge ${selectedRequest.status}`}
+                            >
+                              {selectedRequest.status === "pending"
+                                ? "⏳ Pending"
+                                : selectedRequest.status === "in_progress"
+                                  ? "🚤 In progress"
+                                  : "✅ Completed"}
+                            </span>
+                          </div>
+
+                          <div className="button-row1">
+                            <button
+                              className="btn btn-secondary"
+                              onClick={() =>
+                                window.open(
+                                  `https://maps.google.com/?q=${selectedRequest.location.lat},${selectedRequest.location.lng}`,
+                                  "_blank",
+                                )
+                              }
+                            >
+                              🗺️ View map
+                            </button>
+
+                            <button
+                              className="btn btn-emergency"
+                              onClick={() =>
+                                window.open(
+                                  `tel:${selectedRequest.phoneNumber}`,
+                                )
+                              }
+                            >
+                              📞 Call
+                            </button>
+                          </div>
                         </div>
-
-                        {teamsError && <div className="dispatch-msg error">{teamsError}</div>}
-                        {dispatchError && <div className="dispatch-msg error">{dispatchError}</div>}
-                        {dispatchSuccess && (
-                          <div className="dispatch-msg success"> {dispatchSuccess}</div>
-                        )}
-                      </div>
-
-
-
-
-                      <div className="button-row1">
-                        <button
-                          className="btn btn-secondary"
-                          onClick={() =>
-                            window.open(
-                              `https://maps.google.com/?q=${selectedRequest.location.lat},${selectedRequest.location.lng}`,
-                              "_blank",
-                            )
-                          }
-                        >
-                          🗺️ View map
-                        </button>
-
-                        <button
-                          className="btn btn-emergency"
-                          onClick={() => {
-                            if (!selectedRequest.phoneNumber) {
-                              alert("Phone number is not available.");
-                              return;
-                            }
-                            window.open(`tel:${selectedRequest.phoneNumber}`);
-                          }}
-                        >
-                          📞 Call now
-                        </button>
                       </div>
                     </div>
-                  </div>
+                  )}
                 </div>
-              ) : (
-                <div className="no-selection">
-                  <div className="no-selection-icon">👈</div>
-                  <h3>Select a rescue request</h3>
-                  <p>
-                    Click on any request from the list to view details and
-                    coordinate rescue efforts
-                  </p>
-                </div>
-              )}
+              </div>
             </div>
           </div>
         </div>
+
         <div className="incident-section">
           <div className="panel-header">
             <h2>⚠️ Pending Incident Reports</h2>
           </div>
 
-          {incidentLoading && <p>Loading incidents...</p>}
-          {incidentError && <p style={{ color: "red" }}>{incidentError}</p>}
+          {incidentLoading && (
+            <p className="incident-state">Loading incidents...</p>
+          )}
+          {incidentError && <p className="incident-error">{incidentError}</p>}
 
           {!incidentLoading && pendingIncidents.length === 0 && (
-            <p>No pending incidents.</p>
+            <p className="incident-state">No pending incidents.</p>
           )}
 
-          <div className="requests-list">
+          <div className="incident-list">
             {pendingIncidents.map((incident) => (
               <div
                 key={incident.incidentReportID}
-                className={`request-card ${selectedIncident?.incidentReportID === incident.incidentReportID ? "selected" : ""}`}
+                className={`incident-card ${selectedIncident?.incidentReportID === incident.incidentReportID ? "selected" : ""}`}
                 onClick={() => setSelectedIncident(incident)}
               >
-                <div className="request-card-header">
-                  <div className="request-id">#{incident.incidentReportID}</div>
-                  <div className="status-badge pending">Pending</div>
+                <div className="incident-card-header">
+                  <div className="incident-id">
+                    #{incident.incidentReportID}
+                  </div>
+                  <div className="incident-status pending">Pending</div>
                 </div>
 
-                <div className="request-card-body">
-                  <h4 className="request-title">⚠️ {incident.title}</h4>
+                <div className="incident-card-body">
+                  <h4 className="incident-title">⚠️ {incident.title}</h4>
 
-                  <div className="request-details">
-                    <div className="detail-row">
-                      <span className="detail-label">Team:</span>
-                      <span className="detail-value">{incident.teamName}</span>
+                  <div className="incident-details">
+                    <div className="incident-row">
+                      <span className="incident-label">Team:</span>
+                      <span className="incident-value">
+                        {incident.teamName}
+                      </span>
                     </div>
 
-                    <div className="detail-row">
-                      <span className="detail-label">Reporter:</span>
-                      <span className="detail-value">{incident.reporterName}</span>
+                    <div className="incident-row">
+                      <span className="incident-label">Reporter:</span>
+                      <span className="incident-value">
+                        {incident.reporterName}
+                      </span>
                     </div>
 
-                    <div className="detail-row">
-                      <span className="detail-label">Description:</span>
-                      <span className="detail-value">{incident.description}</span>
+                    <div className="incident-row">
+                      <span className="incident-label">Description:</span>
+                      <span className="incident-value">
+                        {incident.description}
+                      </span>
                     </div>
 
-                    <div className="detail-row">
-                      <span className="detail-label">Created:</span>
-                      <span className="detail-value">
+                    <div className="incident-row">
+                      <span className="incident-label">Created:</span>
+                      <span className="incident-value">
                         {incident.createdTime
                           ? new Date(incident.createdTime).toLocaleString()
                           : ""}
@@ -1549,22 +1531,30 @@ const Dashboard = () => {
               <div className="details-grid">
                 <div className="detail-group full-width">
                   <h4>Title</h4>
-                  <div className="description-box">{selectedIncident.title}</div>
+                  <div className="description-box">
+                    {selectedIncident.title}
+                  </div>
                 </div>
 
                 <div className="detail-group full-width">
                   <h4>Description</h4>
-                  <div className="description-box">{selectedIncident.description}</div>
+                  <div className="description-box">
+                    {selectedIncident.description}
+                  </div>
                 </div>
 
                 <div className="detail-group">
                   <h4>Team</h4>
-                  <div className="special-needs">{selectedIncident.teamName}</div>
+                  <div className="special-needs">
+                    {selectedIncident.teamName}
+                  </div>
                 </div>
 
                 <div className="detail-group">
                   <h4>Reporter</h4>
-                  <div className="special-needs">{selectedIncident.reporterName}</div>
+                  <div className="special-needs">
+                    {selectedIncident.reporterName}
+                  </div>
                 </div>
 
                 <div className="detail-group full-width">
@@ -1574,7 +1564,11 @@ const Dashboard = () => {
                     onChange={(e) => setResolveNote(e.target.value)}
                     rows={4}
                     placeholder="Enter coordinator note..."
-                    style={{ width: "100%", padding: "12px", borderRadius: "8px" }}
+                    style={{
+                      width: "100%",
+                      padding: "12px",
+                      borderRadius: "8px",
+                    }}
                   />
                 </div>
               </div>
@@ -1638,7 +1632,7 @@ const Dashboard = () => {
           )}
         </div>
       </div>
-    </div >
+    </div>
   );
 };
 

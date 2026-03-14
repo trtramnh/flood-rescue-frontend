@@ -30,61 +30,55 @@ class SignalRService {
     }
     async _connect() {
         try {
-            // Lấy token từ localStorage
-            const token = localStorage.getItem("accessToken");
 
-            if (!token) {
-                console.warn(
-                    "No access token found. SignalR will connect without authentication.",
-                );
-            }
-            // Build connection với JWT authentication
+            const token = localStorage.getItem("token");
+
             this.connection = new signalR.HubConnectionBuilder()
                 .withUrl(HUB_URL, {
-                    // SignalR sẽ gọi hàm accessTokenFactory để lấy token khi cần.
-                    accessTokenFactory: () => localStorage.getItem("accessToken") || "",
-                    // Transport: WebSocket là ưu tiên, fallback sang ServerSentEvents, LongPolling
+                    accessTokenFactory: () => {
+                        const token = localStorage.getItem("token");
+                        if (!token) return "";
+                        return token.replace(/"/g, "").replace("Bearer ", "");
+                    },
                     transport:
                         signalR.HttpTransportType.WebSockets |
                         signalR.HttpTransportType.ServerSentEvents |
                         signalR.HttpTransportType.LongPolling,
                 })
                 .withAutomaticReconnect({
-                    // tự reconnect theo lịch bạn đặt:
                     nextRetryDelayInMilliseconds: (retryContext) => {
-                        if (retryContext.previousRetryCount < 5) {
-                            const delays = [0, 2000, 5000, 10000, 30000];
+                        const delays = [0, 2000, 5000, 10000, 30000];
+                        if (retryContext.previousRetryCount < delays.length) {
                             return delays[retryContext.previousRetryCount];
                         }
-                        return null; // 5 lần: dừng (return null)
+                        return null;
                     },
                 })
                 .configureLogging(signalR.LogLevel.Information)
                 .build();
-            // gắn handler cho đóng kết nối / reconnecting / reconnected
+
             this._setupEventHandlers();
-            // start connection
+
             await this.connection.start();
-            // bật cờ connected
+
             this.isConnected = true;
-            console.log("SignalR Connected successfully!");
-            console.log(`Transport: ${this.connection.connection.transport.name}`);
+
+            console.log("SignalR connected");
+
         } catch (error) {
 
             console.error("SignalR Connection Error:", error);
             this.isConnected = false;
 
-            // Nếu connect lỗi, đợi 5 giây rồi thử lại.
-
-            //(Lưu ý: Có withAutomaticReconnect, nhưng đoạn này vẫn giúp trường hợp lỗi khi “start lần đầu”.)
             setTimeout(() => {
-                const token = localStorage.getItem("accessToken");
+                const token = localStorage.getItem("token");
                 this.connectionPromise = null;
 
                 if (token) {
                     this.startConnection();
                 }
             }, 5000);
+
         } finally {
             this.connectionPromise = null;
         }
@@ -115,7 +109,6 @@ class SignalRService {
     on(eventName, callback) {
         if (this.connection) {
             this.connection.on(eventName, callback);
-            this.connection.off(eventName);
             console.log(`Subscribed to event: ${eventName}`);
         } else {
             console.warn(`Cannot subscribe to ${eventName}: Connection not initialized`);
