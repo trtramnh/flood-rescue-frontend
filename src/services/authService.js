@@ -79,8 +79,8 @@ export async function login(username, password) {
   if (data?.userID) {
     localStorage.setItem("userId", data.userID);
   }
-
-  if (data?.teamId) {
+  const teamId = data?.teamID ?? data?.teamId;
+  if (teamId) {
     localStorage.setItem("teamId", data.teamId);
   }
   localStorage.removeItem("isLeader");
