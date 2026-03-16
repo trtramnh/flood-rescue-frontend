@@ -90,9 +90,22 @@ const Dashboard = () => {
         case "Manager":
           navigate("/manager", { replace: true });
           break;
-        case "RescueTeam":
-          navigate("/rescue-team", { replace: true });
+        case "RescueTeam": {
+          const teamId = content?.teamID || content?.teamId || content?.TeamId;
+
+          if (!teamId) {
+            showToast("Không tìm thấy teamId", "error");
+            console.log("LOGIN CONTENT:", content);
+            return;
+          }
+
+          localStorage.setItem("teamId", teamId);
+
+          navigate(`/rescue-team/${teamId}`, { replace: true });
+
           break;
+        }
+
         case "Coordinator":
           navigate("/coordinator", { replace: true });
           break;

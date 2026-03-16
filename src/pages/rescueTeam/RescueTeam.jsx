@@ -7,8 +7,7 @@ import RescueTeamMember from "./RescueTeamMember";
 import { fetchWithAuth } from "../../services/apiClient";
 export default function RescueTeam() {
   const params = useParams();
-  const teamId = params.teamId || localStorage.getItem("teamId");
-
+  const teamId = params.teamId;
   const [loading, setLoading] = useState(true);
   const [isLeader, setIsLeader] = useState(false);
 
@@ -50,5 +49,9 @@ export default function RescueTeam() {
     return <div style={{ padding: 40 }}>Loading team...</div>;
   }
 
-  return isLeader ? <RescueTeamLeader /> : <RescueTeamMember />;
+  return isLeader ? (
+    <RescueTeamLeader teamId={teamId} />
+  ) : (
+    <RescueTeamMember teamId={teamId} />
+  );
 }

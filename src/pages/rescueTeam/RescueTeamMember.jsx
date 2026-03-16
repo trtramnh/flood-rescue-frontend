@@ -1,7 +1,6 @@
 import "./Dashboard.css";
 import Header from "../../components/common/Header";
 import { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
 
 import { rescueMissionService } from "../../services/rescueMissionService";
 
@@ -36,9 +35,8 @@ L.Icon.Default.mergeOptions({
     "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png"
 });
 
-export default function RescueTeamMember() {
+export default function RescueTeamMember({teamId}) {
 
-  const { teamId } = useParams();
 
   const [missions, setMissions] = useState([]);
   const [loading, setLoading] = useState(false);

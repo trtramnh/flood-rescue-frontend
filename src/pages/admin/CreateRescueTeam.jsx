@@ -72,6 +72,7 @@ const CreateRescueTeam = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    console.log("SUBMIT CLICKED"); // thêm dòng này
 
     if (!validateForm()) {
       showToast("❌ Please fix the errors in the form");
@@ -201,9 +202,7 @@ const CreateRescueTeam = () => {
                 className={errors.currentLongitude ? "error" : ""}
               />
               {errors.currentLongitude && (
-                <span className="error-message">
-                  {errors.currentLongitude}
-                </span>
+                <span className="error-message">{errors.currentLongitude}</span>
               )}
             </div>
           </div>
